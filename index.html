@@ -30,7 +30,7 @@ button.danger{background:transparent;color:#b3261e;padding:4px 8px;font-size:22p
 .banner{background:#fff1d6;color:#8a5a00;border-radius:8px;padding:10px;margin:8px 0;font-weight:600}
 .locrow{display:flex}.locrow .pre{flex:0 0 auto;padding:12px 10px;background:#e6e9ee;border:1px solid #c9ced6;border-right:0;border-radius:8px 0 0 8px;font-size:17px;font-weight:700;color:#1f3a5f}.locrow input{border-radius:0 8px 8px 0}
 .prev{font-size:14px;color:#1f3a5f;margin-top:6px;min-height:18px;font-weight:600}
-.tabs{display:flex;gap:6px;padding:10px 12px 0;max-width:640px;margin:0 auto}.tabs button{flex:1;background:#e6e9ee;color:#1c1e21;padding:10px 8px;font-size:15px}.tabs button.on{background:#1f3a5f;color:#fff}
+.tabs{display:flex;gap:6px;padding:10px 12px 0;max-width:640px;margin:0 auto}.tabs button{flex:1;background:#e6e9ee;color:#1c1e21;padding:10px 8px;font-size:15px}.tabs button.on{background:#1f3a5f;color:#fff}.tabs button small{display:block;font-weight:400;font-size:12px;opacity:.85}
 select{width:100%;padding:12px;font-size:17px;border:1px solid #c9ced6;border-radius:8px;background:#fff}
 .pcard{border:1px solid #e1e4e8;border-radius:10px;padding:12px;margin-top:10px}.pcard.valid{border-color:#1b8a3a;background:#f3fbf5}
 .ph{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pd{margin:4px 0;font-size:15px}.pi{font-size:13px;color:#555;margin-top:2px}
@@ -57,11 +57,12 @@ textarea{width:100%;height:140px;font-size:13px}
 </head>
 <body>
 <header><span>Inventario al barrido</span><small id="fileInfo">Sin Excel</small></header>
-<div class="tabs"><button id="tab1" class="on">Ronda 1 · Conteo</button><button id="tab2">Ronda 2 · Validación</button></div>
+<div class="tabs"><button id="tab1" class="on">Ronda 1<small>Conteo</small></button><button id="tab2">Ronda 2<small>Validación</small></button><button id="tab3">Ronda 3<small>Validación</small></button></div>
 <main>
 
 <div class="card">
-  <b>1. Cargar el Excel</b>
+  <b id="fileTitle">1. Cargar el Excel de la Ronda 1</b>
+  <div class="muted" style="margin-top:4px">Cada ronda tiene su propio Excel y su propio avance: no se mezclan.</div>
   <label for="file">Archivo .xlsx</label>
   <input type="file" id="file">
   <div id="loadMsg" class="muted" style="margin-top:8px"></div>
@@ -127,6 +128,9 @@ textarea{width:100%;height:140px;font-size:13px}
   <input id="outName" autocomplete="off" placeholder="Ej. Inventario_Callao_12nov" style="margin-bottom:8px">
   <div class="row" style="margin-bottom:8px">
     <button class="green" id="dlBtn">Descargar Excel</button>
+  </div>
+  <div class="row" style="margin-bottom:8px">
+    <button class="sec" id="shareBtn">Compartir</button>
     <button class="sec" id="copyBtn">Copiar</button>
   </div>
   <div class="row" style="margin-bottom:8px"><button class="sec" id="resetBtn">Borrar todo</button></div>
@@ -161,13 +165,30 @@ function mapColumns(ws,rng){
     if(!(k in found)){COL[k]=next++;hdrNew.push({k,col:COL[k],text})}
 }
 const KEY='inv_barrido_v2';
-let origBuf=null,fileName='',idx=new Map(),counts=[],hdr2=-1,cleared=[],dirty=0;
+let origBuf=null,fileName='',idx=new Map(),counts=[],hdr2=-1,cleared=[],dirty=0,markIdx=null;
+// Cada ronda (1, 2, 3) es independiente: su propio Excel (IndexedDB 'file'+ronda), avance y borrador
+const SUF={'1':'_contado','2':'_ronda2','3':'_ronda3'};
 // Copia del Excel dentro del navegador: si Brave se cierra (poca RAM), al volver se recupera solo
 function idb(){return new Promise((res,rej)=>{try{const q=indexedDB.open('inv_barrido',1);q.onupgradeneeded=()=>q.result.createObjectStore('f');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)}catch(e){rej(e)}})}
 async function idbPut(k,v){try{const d=await idb();return await new Promise((res,rej)=>{const t=d.transaction('f','readwrite');t.objectStore('f').put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>rej(t.error)})}catch(e){return false}}
 async function idbGet(k){try{const d=await idb();return await new Promise((res,rej)=>{const r=d.transaction('f').objectStore('f').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch(e){return null}}
-const stKey=()=>KEY+'|'+fileName;
-function persist(){try{if(fileName)localStorage.setItem(stKey(),JSON.stringify({counts,cleared,dirty}))}catch(e){}updBackup()}
+async function idbDel(k){try{const d=await idb();return await new Promise((res,rej)=>{const t=d.transaction('f','readwrite');t.objectStore('f').delete(k);t.oncomplete=()=>res(true);t.onerror=()=>rej(t.error)})}catch(e){return false}}
+// clave por ronda + nombre + tamaño: dos Excels con el mismo nombre no se mezclan
+const stKey=()=>KEY+'|R'+mode+'|'+fileName+'|'+(origBuf?origBuf.byteLength:0);
+// Datos de la versión anterior (un solo Excel): pasan a la ronda que estaba abierta
+async function migrateOld(){
+  try{
+    const old=await idbGet('last');if(!old||!old.buf)return;
+    const slot=localStorage.getItem('inv_mode')==='2'?'2':'1';
+    if(!(await idbGet('file'+slot))&&!(await idbPut('file'+slot,old)))return;
+    const sk=KEY+'|'+old.name,s=localStorage.getItem(sk),nk=KEY+'|R'+slot+'|'+old.name+'|'+old.buf.byteLength;
+    if(s){if(!localStorage.getItem(nk))localStorage.setItem(nk,s);localStorage.removeItem(sk)}
+    const d=localStorage.getItem('inv_draft');
+    if(d){if(!localStorage.getItem('inv_draft|'+slot))localStorage.setItem('inv_draft|'+slot,d);localStorage.removeItem('inv_draft')}
+    await idbDel('last');
+  }catch(e){}
+}
+function persist(){markIdx=null;try{if(fileName)localStorage.setItem(stKey(),JSON.stringify({counts,cleared,dirty}))}catch(e){}updBackup()}
 function save(){dirty++;persist()}
 function updBackup(){
   const e=$('bk');if(!e)return;
@@ -177,9 +198,7 @@ function loadSaved(){
   counts=[];cleared=[];dirty=0;
   try{
     const s=localStorage.getItem(stKey());
-    if(s){const o=JSON.parse(s)||{};counts=o.counts||[];cleared=o.cleared||[];dirty=o.dirty||0;return}
-    const old=localStorage.getItem(KEY); // avance guardado por la versión anterior
-    if(old){const a=JSON.parse(old);if(Array.isArray(a)&&a.length){counts=a;localStorage.removeItem(KEY)}}
+    if(s){const o=JSON.parse(s)||{};counts=o.counts||[];cleared=o.cleared||[];dirty=o.dirty||0}
   }catch(e){}
 }
 // Trae lo que ya tiene el archivo (CONTEO / Ubicación Actual / Observación) para poder validarlo y editarlo
@@ -227,7 +246,7 @@ async function loadWorkbook(buf,name,restored){
     loadSaved();const nImp=importRows(ws,rng);editing=null;endEditUI();persist();
     {const f={};idx.forEach(v=>v.forEach(x=>{const b=x.def.split('-')[0].trim().toUpperCase();if(b)f[b]=(f[b]||0)+1}));
      const top=Object.keys(f).sort((a,b)=>f[b]-f[a])[0];BASE=top||'10';$('basePre').textContent=BASE+'-';$('r2Pre').textContent=BASE+'-'}
-    if(!$('outName').value)$('outName').value=fileName.replace(/\.xlsx?$/i,'')+'_contado';
+    if(!$('outName').value)$('outName').value=fileName.replace(/\.xlsx?$/i,'')+SUF[mode];
     $('fileInfo').textContent=fileName+' · '+idx.size+' códigos';
     $('loadMsg').innerHTML=`<span class="badge ok">Listo</span> ${restored?'<b>Se recuperó tu archivo y tu avance.</b> ':''}${n} filas, ${idx.size} códigos. Las columnas CONTEO y Ubicación Actual se llenan solas.${nImp?` <b>Se cargaron ${nImp} registros que ya tenía el archivo</b>: están en la lista para validar o editar con ✎.`:''}`;
     loaded=true;buildAllRows(ws,rng);applyMode();
@@ -239,40 +258,60 @@ $('file').addEventListener('change',async e=>{
   $('loadMsg').textContent='Leyendo '+f.name+'…';
   try{
     if(!/\.xlsx$/i.test(f.name))throw new Error('El archivo debe ser .xlsx (el tuyo se llama '+f.name+').');
+    const m=mode,tok=++loadTok;
     const buf=await f.arrayBuffer();
-    await idbPut('last',{name:f.name,buf}); // copia para recuperar si el navegador se cierra
-    try{localStorage.removeItem(DRAFT)}catch(e){}
+    await idbPut('file'+m,{name:f.name,buf}); // copia de esta ronda para recuperar si el navegador se cierra
+    if(m!==mode||tok!==loadTok)return; // cambiaste de ronda mientras cargaba
+    try{localStorage.removeItem(DRAFT())}catch(e){}
     $('outName').value='';
     await loadWorkbook(buf,f.name,false);
   }catch(err){$('loadMsg').textContent='Error: '+err.message}
 });
 // Borrador del formulario: lo que estabas escribiendo también se recupera
 let toastT;
-function toast(msg,bad){const t=$('toast');t.textContent=msg;t.style.background=bad?'#b3261e':'#1b8a3a';t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2400)}
-const DRAFT='inv_draft';
+function toast(msg,bad,undo){
+  const t=$('toast');
+  t.innerHTML=esc(msg)+(undo?' <button id="undoBtn" style="margin-left:10px;padding:4px 10px;font-size:14px;background:#fff;color:#1b8a3a">Deshacer</button>':'');
+  t.style.background=bad?'#b3261e':'#1b8a3a';t.style.pointerEvents=undo?'auto':'none';
+  t.classList.add('on');clearTimeout(toastT);
+  toastT=setTimeout(()=>{t.classList.remove('on');t.style.pointerEvents='none'},undo?5000:2400);
+  if(undo)$('undoBtn').onclick=()=>{t.classList.remove('on');t.style.pointerEvents='none';undo()};
+}
+const DRAFT=()=>'inv_draft|'+mode;
 const DRAFT_IDS=['code','loc','qty','obs','desc','r2loc','r2q','outName'];
-function saveDraft(){try{const d={file:fileName,same:$('same').checked,r2show:$('r2show').value};DRAFT_IDS.forEach(i=>d[i]=$(i).value);localStorage.setItem(DRAFT,JSON.stringify(d))}catch(e){}}
+function saveDraft(){try{const d={file:fileName,same:$('same').checked,r2show:$('r2show').value};DRAFT_IDS.forEach(i=>d[i]=$(i).value);localStorage.setItem(DRAFT(),JSON.stringify(d))}catch(e){}}
 function restoreDraft(){
   try{
-    const d=JSON.parse(localStorage.getItem(DRAFT)||'null');if(!d||d.file!==fileName)return;
+    const d=JSON.parse(localStorage.getItem(DRAFT())||'null');if(!d||d.file!==fileName)return;
     DRAFT_IDS.forEach(i=>{if(d[i]!==undefined&&d[i]!=='')$(i).value=d[i]});
     $('same').checked=!!d.same;$('r2show').value=d.r2show||'all';
-    update();if(mode==='2')r2Render();
+    update();if(mode!=='1')r2Render();
   }catch(e){}
 }
 DRAFT_IDS.forEach(i=>$(i).addEventListener('input',saveDraft));
 $('same').addEventListener('change',saveDraft);$('r2show').addEventListener('change',saveDraft);
+// Abre el Excel guardado de la ronda actual (al iniciar o al cambiar de pestaña)
 async function restoreSession(){
+  const m=mode,tok=++loadTok;
   try{
-    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
-    const rec=await idbGet('last');if(!rec||!rec.buf)return;
     $('loadMsg').textContent='Recuperando tu archivo…';
+    const rec=await idbGet('file'+m);
+    if(m!==mode||tok!==loadTok)return;
+    if(!rec||!rec.buf){$('loadMsg').textContent='';return}
     await loadWorkbook(rec.buf,rec.name,true);
   }catch(e){}
 }
+// Deja la pantalla vacía (antes de abrir otra ronda)
+function unload(){
+  loaded=false;origBuf=null;fileName='';idx=new Map();counts=[];cleared=[];dirty=0;hdr2=-1;allRows=[];markIdx=null;
+  editing=null;endEditUI();r2Open.clear();
+  DRAFT_IDS.forEach(i=>$(i).value='');$('same').checked=false;$('loc').disabled=false;$('r2show').value='all';$('flt').value='';$('file').value='';
+  $('fileInfo').textContent='Sin Excel';$('loadMsg').textContent='';$('dlMsg').textContent='';$('copyBox').style.display='none';
+  updBackup();applyMode();
+}
 
-let loaded=false,mode='1',allRows=[],r2Ready=false;
-try{mode=localStorage.getItem('inv_mode')==='2'?'2':'1'}catch(e){}
+let loaded=false,mode='1',allRows=[],r2Ready=false,loadTok=0;
+try{const m=localStorage.getItem('inv_mode');mode=['1','2','3'].includes(m)?m:'1'}catch(e){}
 let BASE='10';
 const locTail=f=>{f=String(f||'').trim();return f.toUpperCase().startsWith(BASE+'-')?f.slice(BASE.length+1):(f?'='+f:'')};
 // "A02,K,11,A" -> "10-A02-K-11-A" (la base no se escribe; la coma o el guion separan, nada se parte solo)
@@ -349,7 +388,7 @@ function add(){
   if(!k){$('code').focus();return}
   if(status==='noexcel'&&dupNew(k)){update();$('code').focus();$('code').select();return}
   if(!L){$('loc').focus();return}
-  if(qty===''){$('qty').focus();return}
+  if(qty===''||Number(qty)<0){$('qty').focus();return}
   const loc=buildLoc($('loc').value);
   const ts=new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
   if(status==='ok'){
@@ -409,16 +448,36 @@ function renderList(){
 $('list').addEventListener('click',e=>{
   const eb=e.target.closest('button[data-e]');if(eb){startEdit(+eb.dataset.e);return}
   const b=e.target.closest('button[data-i]');if(!b)return;
-  const del=counts[+b.dataset.i];if(del&&del.kind==='mark')cleared.push({row:del.row,full:del.status==='noexcel'});
-  counts.splice(+b.dataset.i,1);save();renderList();update();toast('Registro eliminado');
+  const i=+b.dataset.i,del=counts[i];if(!del)return;
+  const prevCleared=cleared.slice(),file=fileName,m=mode;
+  if(del.kind==='mark')cleared.push({row:del.row,full:del.status==='noexcel'});
+  counts.splice(i,1);save();renderList();update();
+  toast('Registro eliminado',false,()=>{
+    if(file!==fileName||m!==mode)return; // ya cambiaste de ronda/archivo
+    counts.splice(Math.min(i,counts.length),0,del);cleared=prevCleared;
+    save();renderList();update();toast('✓ Restaurado');
+  });
 });
 $('resetBtn').addEventListener('click',()=>{
   const b=$('resetBtn');
-  if(b.dataset.arm){editing=null;endEditUI();counts.filter(c=>c.kind==='mark').forEach(c=>cleared.push({row:c.row,full:c.status==='noexcel'}));counts=[];save();renderList();update();if(loaded&&mode==='2')r2Render();b.textContent='Borrar todo';delete b.dataset.arm;return}
+  if(b.dataset.arm){editing=null;endEditUI();counts.filter(c=>c.kind==='mark').forEach(c=>cleared.push({row:c.row,full:c.status==='noexcel'}));counts=[];save();renderList();update();if(loaded&&mode!=='1')r2Render();b.textContent='Borrar todo';delete b.dataset.arm;return}
   b.dataset.arm='1';b.textContent='¿Seguro? Toca otra vez';
   setTimeout(()=>{b.textContent='Borrar todo';delete b.dataset.arm},3000);
 });
 
+// Ruta real de la primera hoja (la misma que lee SheetJS), no siempre es sheet1.xml
+async function firstSheetPath(zip){
+  try{
+    const wbx=await zip.file('xl/workbook.xml').async('string');
+    const rels=await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const rid=(wbx.match(/<sheet\b[^>]*?\b\w+:id="([^"]+)"/)||[])[1];
+    const tag=rid?(rels.match(new RegExp('<Relationship\\b[^>]*\\bId="'+rid+'"[^>]*>'))||[''])[0]:'';
+    const t=(tag.match(/Target="([^"]+)"/)||[])[1];
+    if(!t)return 'xl/worksheets/sheet1.xml';
+    const p=t.startsWith('/')?t.slice(1):'xl/'+t.replace(/^\.\//,'');
+    return zip.file(p)?p:'xl/worksheets/sheet1.xml';
+  }catch(e){return 'xl/worksheets/sheet1.xml'}
+}
 async function buildXlsx(){
   const JSZ=window.JSZip;if(!JSZ)throw new Error('No cargó la librería de zip. Recarga la página.');
   // siguiente fila libre y último Item (lectura con SheetJS)
@@ -432,7 +491,7 @@ async function buildXlsx(){
   }
   let nextRow=last+2; // fila 1-based siguiente
   const zip=await JSZ.loadAsync(origBuf);
-  const sheetPath='xl/worksheets/sheet1.xml';
+  const sheetPath=await firstSheetPath(zip);
   const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const doc=new DOMParser().parseFromString(await zip.file(sheetPath).async('string'),'application/xml');
   const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
@@ -521,24 +580,31 @@ async function buildXlsx(){
   }
   return zip.generateAsync({type:'arraybuffer',compression:'DEFLATE'});
 }
+const XMIME='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const outFile=()=>(($('outName').value||'').replace(/\.xlsx$/i,'').replace(/[\\\/:*?"<>|]+/g,'').trim()||fileName.replace(/\.xlsx?$/i,'')+SUF[mode])+'.xlsx';
 $('dlBtn').addEventListener('click',async()=>{
   $('dlMsg').textContent='';
   if(!origBuf){$('dlMsg').textContent='Carga el Excel primero.';return}
   if(!counts.length){$('dlMsg').textContent='Aún no hay nada registrado.';return}
   try{
     const out=await buildXlsx();
-    const name=(($('outName').value||'').replace(/\.xlsx$/i,'').replace(/[\\\/:*?"<>|]+/g,'').trim()||fileName.replace(/\.xlsx?$/i,'')+'_contado')+'.xlsx';
-    let dl=null;try{dl=await claude.use('downloads')}catch(e){}
-    if(dl)await dl.save({filename:name,data:out});
-    else{ // web normal: descarga directa
-      const u=URL.createObjectURL(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
-      const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);
-    }
+    const u=URL.createObjectURL(new Blob([out],{type:XMIME}));
+    const a=document.createElement('a');a.href=u;a.download=outFile();document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);
     dirty=0;persist();
     $('dlMsg').innerHTML='<span class="badge ok">Descarga lista</span>';toast('✓ Excel descargado');
   }catch(err){
-    $('dlMsg').textContent=err&&err.code==='declined'?'Cancelaste la descarga.':'No se pudo descargar: '+(err&&err.message||err);
+    $('dlMsg').textContent='No se pudo descargar: '+(err&&err.message||err);
   }
+});
+// Compartir directo (WhatsApp, correo…): necesita HTTPS
+$('shareBtn').addEventListener('click',async()=>{
+  if(!origBuf||!counts.length){toast('Aún no hay nada registrado',true);return}
+  try{
+    const f=new File([await buildXlsx()],outFile(),{type:XMIME});
+    if(!(navigator.canShare&&navigator.canShare({files:[f]}))){toast('Tu navegador no permite compartir; usa Descargar',true);return}
+    await navigator.share({files:[f],title:f.name});
+    dirty=0;persist();toast('✓ Compartido');
+  }catch(err){if(!err||err.name!=='AbortError')toast('No se pudo compartir',true)}
 });
 $('copyBtn').addEventListener('click',async()=>{
   const head=['Número de artículo','Descripción','CONTEO','Ubicación Actual','Estado','Ubicación en Excel','Observación'];
@@ -569,9 +635,14 @@ function appendRows(){
     return{row:null,id:c.id,code:c.code,desc:c.desc||'',um:c.um||'UNIDAD',def:'',F:c.qty,G:c.loc,isNew:true,isApp:true,ent:c};
   });
 }
+// índice fila -> registro (evita recorrer counts por cada fila); se invalida en persist() y al renderizar
+function markOf(row){
+  if(!markIdx){markIdx=new Map();for(const c of counts)if(c.kind==='mark'&&!markIdx.has(c.row))markIdx.set(c.row,c)}
+  return markIdx.get(row);
+}
 function stOf(r){
   if(r.isApp)return{e:r.ent,qty:r.ent.qty,loc:r.ent.loc,val:!!r.ent.val};
-  const e=counts.find(c=>c.kind==='mark'&&c.row===r.row);
+  const e=markOf(r.row);
   if(e)return{e,qty:e.qty,loc:r.isNew?e.loc:(e.status==='ok'?r.def:e.loc),val:!!e.val};
   const g=r.G;
   return{e:null,qty:r.F,loc:r.isNew?g:((g&&g.toUpperCase()!=='OK')?g:r.def),val:false};
@@ -585,7 +656,8 @@ function r2Rows(){
     if(show==='pend'&&s.val)return false;
     if(show==='val'&&!s.val)return false;
     return true;
-  }).sort((a,b)=>(a.s.val-b.s.val)||(canon(a.r.def||a.s.loc)+'|'+a.r.code).localeCompare(canon(b.r.def||b.s.loc)+'|'+b.r.code,'es',{numeric:true})); // pendientes arriba, validados abajo
+  }).map(x=>(x.k=canon(x.r.def||x.s.loc)+'|'+x.r.code,x))
+    .sort((a,b)=>(a.s.val-b.s.val)||a.k.localeCompare(b.k,'es',{numeric:true})); // pendientes arriba, validados abajo
 }
 const r2Open=new Set(); // validados que se abrieron para editar
 const rkey=r=>r.isApp?r.id:'r'+r.row;
@@ -612,6 +684,7 @@ function r2Summary(list){
 }
 function r2Render(){
   if(!loaded)return;
+  markIdx=null;
   // lista de ubicaciones y pasillos para elegir
   if(!r2Ready){
     const cnt=new Map(),pas=new Map();
@@ -654,11 +727,12 @@ $('r2List').addEventListener('input',e=>{
 $('r2List').addEventListener('click',e=>{
   const ed=e.target.closest('.ed');
   const btn=ed||e.target.closest('.sv');if(!btn)return;
+  markIdx=null;
   const card=btn.closest('.pcard'),r=card.dataset.id?appendRows().find(x=>x.id===card.dataset.id):allRows.find(x=>x.row===+card.dataset.row);if(!r)return;
   if(ed){r2Open.add(rkey(r));card.outerHTML=cardHtml({r,s:stOf(r)});const nc=$('r2List').querySelector(r.isApp?'.pcard[data-id="'+r.id+'"]':'.pcard[data-row="'+r.row+'"]');if(nc)nc.querySelector('.q').focus();return}
   const wasVal=stOf(r).val;
   const qty=card.querySelector('.q').value.trim(),prev=card.querySelector('.prev');
-  if(qty===''){prev.innerHTML='<span class="badge bad">Falta la cantidad</span>';card.querySelector('.q').focus();return}
+  if(qty===''||Number(qty)<0){prev.innerHTML='<span class="badge bad">'+(qty===''?'Falta la cantidad':'Cantidad inválida')+'</span>';card.querySelector('.q').focus();return}
   const lv=card.querySelector('.l').value.trim();
   if(r.isApp){ // serie agregada en esta sesión: se actualiza tal cual
     const en=r.ent;en.qty=qty;if(lv)en.loc=buildLoc(lv);en.val=true;save();
@@ -684,17 +758,27 @@ $('r2List').addEventListener('click',e=>{
 });
 /* ===================== MODOS ===================== */
 function applyMode(){
-  $('tab1').classList.toggle('on',mode==='1');$('tab2').classList.toggle('on',mode==='2');
-  const sh=(id,v)=>$(id).style.display=v?'block':'none';
-  sh('scanCard',loaded&&mode==='1');sh('listCard',loaded&&mode==='1');sh('r2Card',loaded&&mode==='2');sh('exportCard',loaded);
-  if(loaded&&mode==='2'){r2Ready=false;r2Render()}
-  if(loaded&&mode==='1'){renderList();update()}
+  ['1','2','3'].forEach(m=>$('tab'+m).classList.toggle('on',mode===m));
+  $('fileTitle').textContent='1. Cargar el Excel de la Ronda '+mode;
+  const val=mode!=='1',sh=(id,v)=>$(id).style.display=v?'block':'none';
+  sh('scanCard',loaded&&!val);sh('listCard',loaded&&!val);sh('r2Card',loaded&&val);sh('exportCard',loaded);
+  if(loaded&&val){r2Ready=false;r2Render()}
+  if(loaded&&!val){renderList();update()}
 }
-function setMode(m){mode=m;try{localStorage.setItem('inv_mode',m)}catch(e){}applyMode();if(m==='1'&&loaded)$('code').focus()}
-$('tab1').addEventListener('click',()=>setMode('1'));$('tab2').addEventListener('click',()=>setMode('2'));
+// Cambiar de ronda: se guarda la actual y se abre el Excel propio de la otra (nada se comparte)
+function setMode(m){
+  if(m===mode)return;
+  if(editing)cancelEdit();
+  persist();
+  mode=m;try{localStorage.setItem('inv_mode',m)}catch(e){}
+  unload();window.scrollTo({top:0});
+  restoreSession();
+}
+['1','2','3'].forEach(m=>$('tab'+m).addEventListener('click',()=>setMode(m)));
 applyMode();
 if(window.__STANDALONE&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-restoreSession();
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+migrateOld().then(restoreSession);
 </script>
 </body>
 </html>

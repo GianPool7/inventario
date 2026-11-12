@@ -35,16 +35,22 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 - **Pendientes arriba; al validar/guardar la tarjeta se achica a una línea y baja** con los validados, sin re-renderizar las demás (conserva lo escrito). Botón "Editar" la reabre. Toast + animación `flash` de confirmación.
 - "Validado" es solo estado de la app (no va al Excel).
 
+## Ronda 3
+- Misma plantilla/pantalla que Ronda 2, pero con **otro Excel** (más corto).
+- **Las 3 rondas son totalmente independientes**: cada una tiene su propio Excel, avance, borrador y descarga (sufijo `_contado` / `_ronda2` / `_ronda3`). Nada pasa de una ronda a otra. Cambiar de pestaña guarda la ronda actual, limpia la pantalla (`unload()`) y abre el Excel de la otra (`restoreSession()`).
+
 ## Arquitectura técnica
 - SheetJS (xlsx 0.18.5) solo para **leer**. JSZip + DOMParser/XMLSerializer para **parchar `xl/worksheets/sheet1.xml`** y conservar estilos: strings inline (`t="inlineStr"`), `fullCalcOnLoad` solo si no existe, se elimina `calcChain`, se extiende `dimension`, se actualiza el `<v>` cacheado de Actualización. Filas nuevas copian el estilo de la 1ª fila bajo la 2ª cabecera.
-- Persistencia: archivo cargado en **IndexedDB** (`inv_barrido`/`f`, clave `last`); estado en **localStorage** (`inv_barrido_v2|<archivo>` → `{counts,cleared,dirty}`, además `inv_draft`, `inv_mode`); `restoreSession()` al iniciar. `persist()` vs `save()` (save incrementa `dirty` → contador de aviso de respaldo).
+- La hoja a parchar se resuelve con `firstSheetPath()` (workbook.xml + rels), no siempre es `sheet1.xml`.
+- Persistencia por ronda: archivo en **IndexedDB** (`inv_barrido`/`f`, claves `file1`/`file2`/`file3`); estado en **localStorage** (`inv_barrido_v2|R<ronda>|<archivo>|<bytes>` → `{counts,cleared,dirty}`, borrador `inv_draft|<ronda>`, `inv_mode` = 1/2/3). `migrateOld()` pasa los datos de la versión anterior (`last`) a la ronda que estaba abierta. `restoreSession()` al iniciar. `persist()` vs `save()` (save incrementa `dirty` → contador de aviso de respaldo).
 - Modelo de `counts`: `{kind:'mark'|'append', row, code, desc, loc, qty, status:'ok'|'new'|'noexcel'|'sinub', excelLocs, obs, val, imp, ts, id}`.
-- Descarga: Blob + `<a download>` (en el sandbox de artifacts usaba `claude.use('downloads')`).
+- Descarga: Blob + `<a download>`; botón Compartir con `navigator.share` (archivo, requiere HTTPS).
+- Borrar (×) tiene "Deshacer" en el toast (5 s). Cantidades negativas se rechazan.
 - Móvil: no usar `accept` en el input de archivo (el celular bloquea la selección).
 
 ## Build web / PWA (carpeta de hosting)
 - `index.html`, `xlsx.full.min.js`, `jszip.min.js` (locales, sin CDN), `sw.js` (network-first), `manifest.webmanifest`, `icon-192.png`, `icon-512.png`; `window.__STANDALONE=true` registra el service worker.
-- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v5) para que los celulares tomen la versión nueva.
+- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v6) para que los celulares tomen la versión nueva. El SW usa la caché si la red tarda >3 s.
 
 ## Pruebas
 - Probar en Chrome real con Playwright (emulación táctil, viewport ~390×780) sirviendo la carpeta con `python3 -m http.server`.
@@ -52,5 +58,4 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 - En tests de ronda 2 esperar ≥200 ms tras escribir (hay debounce de 150 ms).
 
 ## Pendiente / ideas
-- Definir hosting (Cloudflare Pages / Netlify / otro).
-- El usuario mencionó "3 opciones al inicio": solo están definidas Ronda 1 y Ronda 2; falta confirmar la tercera.
+- Hosting: Netlify (lo publica el usuario). Repo: github.com/GianPool7/inventario.
