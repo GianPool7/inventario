@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventario al barrido</title>
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>window.__STANDALONE=true</script>
+<script src="xlsx.full.min.js"></script>
+<script src="jszip.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f5f7;color:#1c1e21;font-size:16px}
+header{background:#1f3a5f;color:#fff;padding:12px 16px;font-weight:600;font-size:18px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header small{font-weight:400;opacity:.85;font-size:12px;text-align:right}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+label{display:block;font-size:13px;color:#555;margin:10px 0 4px}
+input{width:100%;padding:12px;font-size:17px;border:1px solid #c9ced6;border-radius:8px;background:#fff}
+input:focus{outline:2px solid #2f6fdb;border-color:#2f6fdb}
+button{font-size:16px;padding:12px 16px;border:0;border-radius:8px;background:#2f6fdb;color:#fff;font-weight:600;cursor:pointer}
+button.sec{background:#e6e9ee;color:#1c1e21}
+button.green{background:#1b8a3a}
+button.danger{background:transparent;color:#b3261e;padding:4px 8px;font-size:22px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.edit{background:transparent;color:#2f6fdb;padding:4px 8px;font-size:20px}
+.banner{background:#fff1d6;color:#8a5a00;border-radius:8px;padding:10px;margin:8px 0;font-weight:600}
+.locrow{display:flex}.locrow .pre{flex:0 0 auto;padding:12px 10px;background:#e6e9ee;border:1px solid #c9ced6;border-right:0;border-radius:8px 0 0 8px;font-size:17px;font-weight:700;color:#1f3a5f}.locrow input{border-radius:0 8px 8px 0}
+.prev{font-size:14px;color:#1f3a5f;margin-top:6px;min-height:18px;font-weight:600}
+.tabs{display:flex;gap:6px;padding:10px 12px 0;max-width:640px;margin:0 auto}.tabs button{flex:1;background:#e6e9ee;color:#1c1e21;padding:10px 8px;font-size:15px}.tabs button.on{background:#1f3a5f;color:#fff}
+select{width:100%;padding:12px;font-size:17px;border:1px solid #c9ced6;border-radius:8px;background:#fff}
+.pcard{border:1px solid #e1e4e8;border-radius:10px;padding:12px;margin-top:10px}.pcard.valid{border-color:#1b8a3a;background:#f3fbf5}
+.ph{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pd{margin:4px 0;font-size:15px}.pi{font-size:13px;color:#555;margin-top:2px}
+.pcard.mini{padding:8px 12px;margin-top:6px}.mrow{display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:14px}.mrow .t{min-width:0;overflow-wrap:anywhere}.mrow button{padding:6px 12px;font-size:14px;flex:0 0 auto}
+.pcard.flash{animation:flash 1.4s}@keyframes flash{0%{background:#b9ecc4;border-color:#1b8a3a}100%{background:#f3fbf5}}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(24px);background:#1b8a3a;color:#fff;padding:12px 18px;border-radius:24px;font-weight:600;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:99;max-width:92vw;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.chip{user-select:none;-webkit-tap-highlight-color:transparent}
+.chk{display:flex;align-items:center;gap:10px;background:#dff5e3;color:#1b6a2c;padding:12px;border-radius:8px;font-size:17px;font-weight:600;margin:10px 0;cursor:pointer}.chk input{width:24px;height:24px;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{background:#e8eefb;color:#1f3a5f;border-radius:14px;padding:6px 10px;font-size:14px;cursor:pointer}
+.chip.done{background:#dff5e3;color:#1b6a2c}
+.badge{display:inline-block;border-radius:6px;padding:4px 8px;font-size:13px;font-weight:600}
+.ok{background:#dff5e3;color:#1b6a2c}.warn{background:#fff1d6;color:#8a5a00}.bad{background:#fde1df;color:#a3211a}
+.item{border-top:1px solid #eee;padding:10px 0;display:flex;gap:8px;align-items:flex-start}
+.item:first-child{border-top:0}
+.item .main{flex:1;min-width:0}.item .t{font-weight:600}.item .s{font-size:13px;color:#666;margin-top:2px}
+.muted{color:#666;font-size:14px}
+textarea{width:100%;height:140px;font-size:13px}
+.stats{display:flex;gap:8px;margin:8px 0}
+.stats div{flex:1;background:#f4f5f7;border-radius:8px;padding:8px;text-align:center;font-size:12px;color:#555}
+.stats b{display:block;font-size:20px;color:#1c1e21}
+</style>
+</head>
+<body>
+<header><span>Inventario al barrido</span><small id="fileInfo">Sin Excel</small></header>
+<div class="tabs"><button id="tab1" class="on">Ronda 1 · Conteo</button><button id="tab2">Ronda 2 · Validación</button></div>
+<main>
+
+<div class="card">
+  <b>1. Cargar el Excel</b>
+  <label for="file">Archivo .xlsx</label>
+  <input type="file" id="file">
+  <div id="loadMsg" class="muted" style="margin-top:8px"></div>
+</div>
+
+<div class="card" id="scanCard" style="display:none">
+  <b>2. Registrar lo que dicta</b>
+  <div id="editBanner" class="banner" style="display:none"><span id="editTxt"></span> <button class="sec" id="cancelEdit" style="padding:6px 10px;margin-left:6px">Cancelar edición</button></div>
+  <label for="code">Número de artículo / serie</label>
+  <input id="code" autocomplete="off" autocapitalize="characters" placeholder="Código dictado">
+  <div id="found"></div>
+  <div id="sameBox" style="display:none"><label class="chk"><input type="checkbox" id="same"> Ubicación igual (OK)</label></div>
+  <label for="loc">Ubicación (separa con comas: pasillo, letra, nivel…)</label>
+  <div class="locrow"><span class="pre" id="basePre">10-</span><input id="loc" autocomplete="off" autocapitalize="characters" placeholder="A02,A,1,A"></div>
+  <div class="prev" id="locPrev"></div>
+  <div id="descBox" style="display:none">
+    <label for="desc">Descripción (opcional, es un código nuevo)</label>
+    <input id="desc" autocomplete="off" placeholder="Descripción">
+  </div>
+  <label for="qty">Cantidad contada</label>
+  <input id="qty" type="number" inputmode="numeric" min="0" placeholder="Unidades">
+  <label for="obs">Observación (opcional)</label>
+  <input id="obs" autocomplete="off" placeholder="Ej. producto grande, dañado, etc.">
+  <div id="status" style="margin:10px 0"></div>
+  <div class="row">
+    <button id="addBtn">Registrar</button>
+    <button class="sec" id="clearBtn">Limpiar</button>
+  </div>
+  <div class="muted" style="margin-top:8px">Enter pasa al siguiente campo; Enter en cantidad registra.</div>
+</div>
+
+<div class="card" id="listCard" style="display:none">
+  <b>3. Registrado</b>
+  <div class="stats">
+    <div><b id="stTotal">0</b>líneas</div>
+    <div><b id="stOk">0</b>OK</div>
+    <div><b id="stNew">0</b>otra ubic.</div>
+    <div><b id="stNo">0</b>no estaba</div>
+  </div>
+  <input id="flt" placeholder="Filtrar la lista (código, ubicación, descripción…)" style="margin:6px 0">
+  <div id="list"></div>
+</div>
+
+<div class="card" id="r2Card" style="display:none">
+  <b>Validar por ubicación</b>
+  <div class="muted" style="margin-top:4px">Elige una ubicación (o solo el pasillo) y revisa cada producto. Corrige la cantidad y toca Validar. Si no escribes ubicación, se queda la que tiene el Excel.</div>
+  <label for="r2loc">Ubicación (ej. A02,A,1,A o solo A02 para todo el pasillo)</label>
+  <div class="locrow"><span class="pre" id="r2Pre">10-</span><input id="r2loc" autocomplete="off" autocapitalize="characters" placeholder="A02,A,1,A"></div>
+  <label for="r2sel">…o elige una ubicación de la lista</label>
+  <select id="r2sel"><option value="">Todas las ubicaciones</option></select>
+  <div class="chips" id="r2Pas"></div>
+  <div class="row">
+    <div><label for="r2q">Código o descripción</label><input id="r2q" autocomplete="off" placeholder="Buscar"></div>
+    <div><label for="r2show">Mostrar</label><select id="r2show"><option value="all">Todos</option><option value="pend">Pendientes</option><option value="val">Validados</option></select></div>
+  </div>
+  <div class="prev" id="r2Sum" style="margin-top:10px"></div>
+  <div id="r2List"></div>
+</div>
+
+<div class="card" id="exportCard" style="display:none">
+  <b>Descargar</b>
+  <label for="outName">Nombre del archivo al descargar</label>
+  <input id="outName" autocomplete="off" placeholder="Ej. Inventario_Callao_12nov" style="margin-bottom:8px">
+  <div class="row" style="margin-bottom:8px">
+    <button class="green" id="dlBtn">Descargar Excel</button>
+    <button class="sec" id="copyBtn">Copiar</button>
+  </div>
+  <div class="row" style="margin-bottom:8px"><button class="sec" id="resetBtn">Borrar todo</button></div>
+  <div id="bk" class="muted" style="margin:6px 0"></div>
+  <div id="dlMsg" class="muted"></div>
+  <div id="copyBox" style="display:none"><textarea id="copyTxt" readonly></textarea></div>
+</div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const normCode=s=>String(s??'').trim().toUpperCase();
+const normLoc=s=>String(s??'').trim().toUpperCase().replace(/[\s_.\/\\]+/g,'-').replace(/-+/g,'-');
+// Columnas del formato: A Item, B Número, C Descripción, D UM, E Ubic. defecto, F CONTEO, G Ubic. actual, H Actualización
+const COL={item:0,code:1,desc:2,um:3,def:4,cnt:5,cur:6,upd:7,obs:8};
+let hdrNew=[]; // columnas que el archivo no tenía y se agregan al descargar
+// Las columnas se buscan por el texto del encabezado, no por la posición: el orden del Excel puede variar
+function mapColumns(ws,rng){
+  const rules=[['upd',/actualizaci/i],['cur',/ubicaci[oó]n actual/i],['def',/defecto/i],['cnt',/conteo/i],['obs',/observ/i],['desc',/descrip/i],['um',/unidad/i],['code',/n[uú]mero|c[oó]digo/i],['item',/^item/i]];
+  const found={};let last=-1;
+  for(let c=0;c<=rng.e.c;c++){
+    const h=txt(cellV(ws,0,c));if(!h)continue;last=c;
+    for(const [k,re] of rules){if(!(k in found)&&re.test(h)){found[k]=c;break}}
+  }
+  hdrNew=[];let next=last+1;
+  const base={item:0,code:1,desc:2,um:3,def:4,cnt:5,cur:6,upd:7};
+  Object.assign(COL,base,found);
+  if(!('upd' in found))COL.upd=-1;
+  for(const [k,text] of [['cnt','CONTEO'],['cur','Ubicación Actual'],['obs','OBSERVACIÓN']])
+    if(!(k in found)){COL[k]=next++;hdrNew.push({k,col:COL[k],text})}
+}
+const KEY='inv_barrido_v2';
+let origBuf=null,fileName='',idx=new Map(),counts=[],hdr2=-1,cleared=[],dirty=0;
+// Copia del Excel dentro del navegador: si Brave se cierra (poca RAM), al volver se recupera solo
+function idb(){return new Promise((res,rej)=>{try{const q=indexedDB.open('inv_barrido',1);q.onupgradeneeded=()=>q.result.createObjectStore('f');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)}catch(e){rej(e)}})}
+async function idbPut(k,v){try{const d=await idb();return await new Promise((res,rej)=>{const t=d.transaction('f','readwrite');t.objectStore('f').put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>rej(t.error)})}catch(e){return false}}
+async function idbGet(k){try{const d=await idb();return await new Promise((res,rej)=>{const r=d.transaction('f').objectStore('f').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch(e){return null}}
+const stKey=()=>KEY+'|'+fileName;
+function persist(){try{if(fileName)localStorage.setItem(stKey(),JSON.stringify({counts,cleared,dirty}))}catch(e){}updBackup()}
+function save(){dirty++;persist()}
+function updBackup(){
+  const e=$('bk');if(!e)return;
+  e.innerHTML=dirty>0?`<span class="badge warn">⚠ ${dirty} cambios sin descargar</span> Tu avance está guardado en este celular. Descarga tu Excel como respaldo.`:(counts.length?'<span class="badge ok">✓ Respaldado</span> Ya descargaste tu Excel con todo lo registrado.':'');
+}
+function loadSaved(){
+  counts=[];cleared=[];dirty=0;
+  try{
+    const s=localStorage.getItem(stKey());
+    if(s){const o=JSON.parse(s)||{};counts=o.counts||[];cleared=o.cleared||[];dirty=o.dirty||0;return}
+    const old=localStorage.getItem(KEY); // avance guardado por la versión anterior
+    if(old){const a=JSON.parse(old);if(Array.isArray(a)&&a.length){counts=a;localStorage.removeItem(KEY)}}
+  }catch(e){}
+}
+// Trae lo que ya tiene el archivo (CONTEO / Ubicación Actual / Observación) para poder validarlo y editarlo
+function importRows(ws,rng){
+  const list=[];
+  for(let r=1;r<=rng.e.r;r++){
+    const code=txt(cellV(ws,r,COL.code));
+    if(!code||/^n[uú]mero de art/i.test(code))continue;
+    const F=txt(cellV(ws,r,COL.cnt)),G=txt(cellV(ws,r,COL.cur)),I=txt(cellV(ws,r,COL.obs));
+    const isNew=hdr2>=0&&r>hdr2;
+    if(!isNew&&F===''&&G==='')continue;
+    if(counts.some(c=>c.kind==='mark'&&c.row===r)||cleared.some(c=>c.row===r))continue;
+    const desc=txt(cellV(ws,r,COL.desc)),def=txt(cellV(ws,r,COL.def));
+    if(isNew){
+      if(counts.some(c=>c.kind==='append'&&normCode(c.code)===normCode(code)))continue;
+      list.push({kind:'mark',row:r,code,desc,loc:G,qty:F,status:'noexcel',obs:I,imp:true,ts:'archivo'});
+    }else{
+      const ok=G.toUpperCase()==='OK';
+      list.push({kind:'mark',row:r,code,desc,loc:ok?def:G,qty:F,status:ok?'ok':(G?'new':'sinub'),excelLocs:def,obs:I,imp:true,ts:'archivo'});
+    }
+  }
+  counts.push(...list);return list.length;
+}
+const cellV=(ws,r,c)=>{const x=ws[XLSX.utils.encode_cell({r,c})];return x?x.v:undefined};
+const txt=v=>v===undefined||v===null?'':String(v).trim();
+
+async function loadWorkbook(buf,name,restored){
+  try{
+    if(typeof XLSX==='undefined')throw new Error('No cargó la librería de Excel. Revisa internet y recarga.');
+    origBuf=buf;fileName=name;
+    const wb=XLSX.read(origBuf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rng=XLSX.utils.decode_range(ws['!ref']);
+    mapColumns(ws,rng);
+    idx=new Map();hdr2=-1;let n=0;
+    for(let r=1;r<=rng.e.r;r++){
+      const code=txt(cellV(ws,r,COL.code));
+      if(!code)continue;
+      if(/^n[uú]mero de art/i.test(code)){hdr2=r;break} // segundo encabezado: aquí empiezan los agregados
+      const k=normCode(code);
+      if(!idx.has(k))idx.set(k,[]);
+      idx.get(k).push({row:r,code,desc:txt(cellV(ws,r,COL.desc)),def:txt(cellV(ws,r,COL.def)),um:txt(cellV(ws,r,COL.um))});
+      n++;
+    }
+    loadSaved();const nImp=importRows(ws,rng);editing=null;endEditUI();persist();
+    {const f={};idx.forEach(v=>v.forEach(x=>{const b=x.def.split('-')[0].trim().toUpperCase();if(b)f[b]=(f[b]||0)+1}));
+     const top=Object.keys(f).sort((a,b)=>f[b]-f[a])[0];BASE=top||'10';$('basePre').textContent=BASE+'-';$('r2Pre').textContent=BASE+'-'}
+    if(!$('outName').value)$('outName').value=fileName.replace(/\.xlsx?$/i,'')+'_contado';
+    $('fileInfo').textContent=fileName+' · '+idx.size+' códigos';
+    $('loadMsg').innerHTML=`<span class="badge ok">Listo</span> ${restored?'<b>Se recuperó tu archivo y tu avance.</b> ':''}${n} filas, ${idx.size} códigos. Las columnas CONTEO y Ubicación Actual se llenan solas.${nImp?` <b>Se cargaron ${nImp} registros que ya tenía el archivo</b>: están en la lista para validar o editar con ✎.`:''}`;
+    loaded=true;buildAllRows(ws,rng);applyMode();
+    renderList();update();if(restored)restoreDraft();else if(mode==='1')$('code').focus();
+  }catch(err){$('loadMsg').textContent='Error: '+err.message}
+}
+$('file').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $('loadMsg').textContent='Leyendo '+f.name+'…';
+  try{
+    if(!/\.xlsx$/i.test(f.name))throw new Error('El archivo debe ser .xlsx (el tuyo se llama '+f.name+').');
+    const buf=await f.arrayBuffer();
+    await idbPut('last',{name:f.name,buf}); // copia para recuperar si el navegador se cierra
+    try{localStorage.removeItem(DRAFT)}catch(e){}
+    $('outName').value='';
+    await loadWorkbook(buf,f.name,false);
+  }catch(err){$('loadMsg').textContent='Error: '+err.message}
+});
+// Borrador del formulario: lo que estabas escribiendo también se recupera
+let toastT;
+function toast(msg,bad){const t=$('toast');t.textContent=msg;t.style.background=bad?'#b3261e':'#1b8a3a';t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2400)}
+const DRAFT='inv_draft';
+const DRAFT_IDS=['code','loc','qty','obs','desc','r2loc','r2q','outName'];
+function saveDraft(){try{const d={file:fileName,same:$('same').checked,r2show:$('r2show').value};DRAFT_IDS.forEach(i=>d[i]=$(i).value);localStorage.setItem(DRAFT,JSON.stringify(d))}catch(e){}}
+function restoreDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem(DRAFT)||'null');if(!d||d.file!==fileName)return;
+    DRAFT_IDS.forEach(i=>{if(d[i]!==undefined&&d[i]!=='')$(i).value=d[i]});
+    $('same').checked=!!d.same;$('r2show').value=d.r2show||'all';
+    update();if(mode==='2')r2Render();
+  }catch(e){}
+}
+DRAFT_IDS.forEach(i=>$(i).addEventListener('input',saveDraft));
+$('same').addEventListener('change',saveDraft);$('r2show').addEventListener('change',saveDraft);
+async function restoreSession(){
+  try{
+    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
+    const rec=await idbGet('last');if(!rec||!rec.buf)return;
+    $('loadMsg').textContent='Recuperando tu archivo…';
+    await loadWorkbook(rec.buf,rec.name,true);
+  }catch(e){}
+}
+
+let loaded=false,mode='1',allRows=[],r2Ready=false;
+try{mode=localStorage.getItem('inv_mode')==='2'?'2':'1'}catch(e){}
+let BASE='10';
+const locTail=f=>{f=String(f||'').trim();return f.toUpperCase().startsWith(BASE+'-')?f.slice(BASE.length+1):(f?'='+f:'')};
+// "A02,K,11,A" -> "10-A02-K-11-A" (la base no se escribe; la coma o el guion separan, nada se parte solo)
+function buildLoc(raw){
+  const t=String(raw||'').trim().toUpperCase();
+  if(!t)return '';
+  if(t[0]==='=')return t.slice(1).trim();
+  const out=[];
+  for(const p of t.split(/[,;\s\-]+/).filter(Boolean))out.push(p); // el guion solo va donde hay coma o guion
+  if(!out.length)return '';
+  return (out[0]===BASE?out:[BASE,...out]).join('-');
+}
+let editing=null;
+const dupNew=k=>k?counts.find(c=>c.status==='noexcel'&&normCode(c.code)===k):null;
+const qtyOf=row=>{const c=counts.find(c=>c.kind==='mark'&&c.row===row);return c?c.qty:''};
+function done(row){return counts.some(c=>c.kind==='mark'&&c.row===row)}
+function current(){
+  const k=normCode($('code').value),L=normLoc(buildLoc($('loc').value));
+  const lines=idx.get(k)||[];
+  if(k&&lines.length&&$('same').checked){const t=lines.find(x=>!done(x.row))||lines[0];return{k,L:normLoc(t.def),lines,status:'ok',match:t,same:true}}
+  let status='none',match=null;
+  if(k){
+    if(!lines.length)status='noexcel';
+    else if(L){match=lines.find(x=>normLoc(x.def)===L)||null;status=match?'ok':'new'}
+  }
+  return{k,L,lines,status,match};
+}
+function update(){
+  const {k,L,lines,status,match,same}=current();
+  $('sameBox').style.display=lines.length?'block':'none';
+  if(!lines.length&&$('same').checked)$('same').checked=false;
+  $('loc').disabled=!!same;
+  if(same)$('loc').value=locTail(match.def);
+  {const b=buildLoc($('loc').value);$('locPrev').textContent=b?'Se guardará: '+b:''}
+  let h='';
+  if(k&&lines.length){
+    h+=`<div style="margin-top:8px"><b>${esc(lines[0].desc)}</b></div><div class="muted">Ubicación en el Excel (toca para usarla):</div><div class="chips">`+
+      lines.map(x=>`<span class="chip${done(x.row)?' done':''}" data-loc="${esc(x.def)}">${esc(x.def)}${done(x.row)?' ✓ '+esc(qtyOf(x.row))+' u.':''}</span>`).join('')+'</div>';
+  }else if(k){
+    const part=[...idx.keys()].filter(x=>x.includes(k)).slice(0,5);
+    if(part.length)h+=`<div class="muted" style="margin-top:8px">¿Quisiste decir?</div><div class="chips">`+part.map(x=>`<span class="chip" data-code="${esc(x)}">${esc(x)}</span>`).join('')+'</div>';
+  }
+  $('found').innerHTML=h;
+  const dup=status==='noexcel'?dupNew(k):null;
+  $('descBox').style.display=status==='noexcel'&&!dup?'block':'none';
+  $('addBtn').disabled=!!dup;$('addBtn').style.opacity=dup?.5:1;
+  let s='';
+  if(status==='ok')s='<span class="badge ok">✓ Ubicación igual: se marca OK y no se mueve</span>';
+  else if(status==='new')s='<span class="badge warn">⚠ Está en otra ubicación: se anota en "Ubicación Actual" de la fila del Excel ('+esc(lines[0].def)+')</span>';
+  else if(status==='noexcel')s=dup?'<span class="badge bad">✗ Ya está agregado ('+esc(dup.qty)+' u. en '+esc(dup.loc)+'). No se puede subir de nuevo. Si te equivocaste, bórralo con × en la lista.</span>':'<span class="badge bad">✗ No está en el Excel: se agrega al final con esta ubicación</span>';
+  const tgt=match||(status==='new'?lines[0]:null);
+  if(tgt&&done(tgt.row))s+=' <span class="badge warn">Ya estaba contado ('+esc(qtyOf(tgt.row))+' u.): se reemplaza</span>';
+  $('status').innerHTML=s;
+}
+$('found').addEventListener('click',e=>{
+  const t=e.target.closest('.chip');if(!t)return;
+  if(t.dataset.code){$('code').value=t.dataset.code;update();$('loc').focus()}
+  else if(t.dataset.loc!==undefined){$('loc').value=locTail(t.dataset.loc);update();$('qty').focus()}
+});
+['code','loc','qty','desc','obs'].forEach(id=>$(id).addEventListener('input',update));
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('loc').focus()}});
+$('loc').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();($('descBox').style.display==='block'?$('desc'):$('qty')).focus()}});
+$('desc').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('qty').focus()}});
+$('qty').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();add()}});
+$('obs').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();add()}});
+$('addBtn').addEventListener('click',add);
+$('same').addEventListener('change',()=>{const on=$('same').checked;if(!on)$('loc').value='';update();(on?$('qty'):$('loc')).focus()});
+function clearForm(){$('same').checked=false;$('loc').disabled=false;['code','loc','qty','desc','obs'].forEach(i=>$(i).value='');update();saveDraft();$('code').focus()}
+$('clearBtn').addEventListener('click',clearForm);
+
+function add(){
+  const {k,L,lines,status,match}=current();
+  const qty=$('qty').value.trim();
+  if(!k){$('code').focus();return}
+  if(status==='noexcel'&&dupNew(k)){update();$('code').focus();$('code').select();return}
+  if(!L){$('loc').focus();return}
+  if(qty===''){$('qty').focus();return}
+  const loc=buildLoc($('loc').value);
+  const ts=new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
+  if(status==='ok'){
+    counts=counts.filter(c=>!(c.kind==='mark'&&c.row===match.row)); // reemplaza si ya estaba
+    counts.unshift({kind:'mark',row:match.row,code:match.code,desc:match.desc,loc:match.def,qty,status,ts});
+  }else if(status==='new'){
+    const t=lines[0]; // el producto solo está en una ubicación: manda la fila del Excel
+    counts=counts.filter(c=>!(c.kind==='mark'&&c.row===t.row));
+    counts.unshift({kind:'mark',row:t.row,code:t.code,desc:t.desc,loc,qty,status,excelLocs:t.def,ts});
+  }else{
+    const E=editing&&editing.entry;
+    if(E&&E.kind==='mark'&&E.status==='noexcel') // fila nueva que ya venía en el archivo: se edita en su lugar
+      counts.unshift({kind:'mark',row:E.row,code:$('code').value.trim(),desc:$('desc').value.trim(),loc,qty,status:'noexcel',ts});
+    else counts.unshift({kind:'append',code:$('code').value.trim(),desc:$('desc').value.trim(),um:'UNIDAD',loc,qty,status:'noexcel',ts});
+  }
+  counts[0].obs=$('obs').value.trim();
+  {const N=counts[0],E=editing&&editing.entry;
+   if(E&&E.kind==='mark'&&(N.kind!=='mark'||N.row!==E.row))cleared.push({row:E.row,full:E.status==='noexcel'});
+   if(N.kind==='mark')cleared=cleared.filter(c=>c.row!==N.row);}
+  const lastE=counts[0],wasEdit=!!editing;
+  if(editing){const e=counts.shift();counts.splice(Math.min(editing.idx,counts.length),0,e);editing=null;endEditUI()}
+  save();clearForm();renderList();
+  toast((wasEdit?'✓ Cambios guardados · ':'✓ Registrado · ')+lastE.code+' · '+lastE.qty+' u.');
+}
+function endEditUI(){$('editBanner').style.display='none';$('addBtn').textContent='Registrar'}
+function cancelEdit(){
+  if(!editing)return;
+  counts.splice(Math.min(editing.idx,counts.length),0,editing.entry);
+  editing=null;endEditUI();clearForm();renderList();
+}
+function startEdit(i){
+  const entry=counts[i];if(!entry)return;
+  if(editing){cancelEdit();i=counts.indexOf(entry)}
+  counts.splice(i,1);editing={idx:i,entry};
+  $('same').checked=false;$('loc').disabled=false;
+  $('code').value=entry.code;$('loc').value=locTail(entry.loc);$('qty').value=entry.qty;$('obs').value=entry.obs||'';$('desc').value=entry.status==='noexcel'?(entry.desc||''):'';
+  $('editTxt').textContent='Editando: '+entry.code;$('editBanner').style.display='block';$('addBtn').textContent='Guardar cambios';
+  renderList();update();window.scrollTo({top:0,behavior:'smooth'});$('qty').focus();
+}
+$('cancelEdit').addEventListener('click',cancelEdit);
+$('flt').addEventListener('input',renderList);
+
+const LABEL={ok:'OK',new:'Ubicación distinta',noexcel:'No estaba en Excel',sinub:'Sin ubicación marcada'};
+const CLS={ok:'ok',new:'warn',noexcel:'bad',sinub:'warn'};
+function renderList(){
+  $('stTotal').textContent=counts.length;
+  ['ok','new','noexcel'].forEach((s,i)=>$(['stOk','stNew','stNo'][i]).textContent=counts.filter(c=>c.status===s).length);
+  const q=($('flt').value||'').trim().toUpperCase();
+  const vis=counts.map((c,i)=>({c,i})).filter(({c})=>!q||[c.code,c.desc,c.loc,c.excelLocs,c.obs,c.qty].join(' ').toUpperCase().includes(q));
+  $('list').innerHTML=vis.length?vis.map(({c,i})=>`
+    <div class="item"><div class="main">
+      <div class="t">${esc(c.code)} · ${esc(c.qty)} u. · ${esc(c.loc)}</div>
+      <div class="s">${esc(c.desc)}</div>${c.obs?'<div class="s">📝 '+esc(c.obs)+'</div>':''}
+      <div class="s"><span class="badge ${CLS[c.status]}">${LABEL[c.status]}</span> ${c.status==='new'?'Excel: '+esc(c.excelLocs)+' · ':''}${esc(c.ts)}</div>
+    </div><button class="edit" data-e="${i}" title="Editar">✎</button><button class="danger" data-i="${i}" title="Borrar">×</button></div>`).join(''):'<div class="muted">'+(counts.length?'Sin resultados.':'Aún no hay registros.')+'</div>';
+}
+$('list').addEventListener('click',e=>{
+  const eb=e.target.closest('button[data-e]');if(eb){startEdit(+eb.dataset.e);return}
+  const b=e.target.closest('button[data-i]');if(!b)return;
+  const del=counts[+b.dataset.i];if(del&&del.kind==='mark')cleared.push({row:del.row,full:del.status==='noexcel'});
+  counts.splice(+b.dataset.i,1);save();renderList();update();toast('Registro eliminado');
+});
+$('resetBtn').addEventListener('click',()=>{
+  const b=$('resetBtn');
+  if(b.dataset.arm){editing=null;endEditUI();counts.filter(c=>c.kind==='mark').forEach(c=>cleared.push({row:c.row,full:c.status==='noexcel'}));counts=[];save();renderList();update();if(loaded&&mode==='2')r2Render();b.textContent='Borrar todo';delete b.dataset.arm;return}
+  b.dataset.arm='1';b.textContent='¿Seguro? Toca otra vez';
+  setTimeout(()=>{b.textContent='Borrar todo';delete b.dataset.arm},3000);
+});
+
+async function buildXlsx(){
+  const JSZ=window.JSZip;if(!JSZ)throw new Error('No cargó la librería de zip. Recarga la página.');
+  // siguiente fila libre y último Item (lectura con SheetJS)
+  const wb0=XLSX.read(origBuf,{type:'array'});const ws0=wb0.Sheets[wb0.SheetNames[0]];
+  const rng=XLSX.utils.decode_range(ws0['!ref']);
+  let last=hdr2>=0?hdr2:0,maxItem=0;
+  for(let r=1;r<=rng.e.r;r++){
+    const cd=txt(cellV(ws0,r,COL.code));
+    if(cd&&!/^n[uú]mero de art/i.test(cd))last=Math.max(last,r);
+    const it=Number(cellV(ws0,r,COL.item));if(it>maxItem)maxItem=it;
+  }
+  let nextRow=last+2; // fila 1-based siguiente
+  const zip=await JSZ.loadAsync(origBuf);
+  const sheetPath='xl/worksheets/sheet1.xml';
+  const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const doc=new DOMParser().parseFromString(await zip.file(sheetPath).async('string'),'application/xml');
+  const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
+  const rowEls=new Map();
+  for(const r of sd.getElementsByTagNameNS(NS,'row'))rowEls.set(+r.getAttribute('r'),r);
+  const getRow=n=>{
+    let r=rowEls.get(n);
+    if(!r){r=doc.createElementNS(NS,'row');r.setAttribute('r',n);
+      let after=null;for(const [k,v] of rowEls)if(k<n&&(!after||k>after.k))after={k,v};
+      if(after&&after.v.nextSibling)sd.insertBefore(r,after.v.nextSibling);else sd.appendChild(r);
+      rowEls.set(n,r)}
+    return r};
+  const getCell=(n,col)=>{
+    const row=getRow(n),ref=XLSX.utils.encode_col(col)+n;
+    for(const c of row.getElementsByTagNameNS(NS,'c'))if(c.getAttribute('r')===ref)return c;
+    const c=doc.createElementNS(NS,'c');c.setAttribute('r',ref);
+    let before=null;
+    for(const o of row.getElementsByTagNameNS(NS,'c')){const oc=XLSX.utils.decode_col(o.getAttribute('r').replace(/\d+/g,''));if(oc>col){before=o;break}}
+    before?row.insertBefore(c,before):row.appendChild(c);
+    return c};
+  const clear=c=>{while(c.firstChild)c.removeChild(c.firstChild);c.removeAttribute('t')};
+  const setNum=(n,col,v)=>{const c=getCell(n,col);clear(c);const e=doc.createElementNS(NS,'v');e.textContent=String(v);c.appendChild(e)};
+  const setStr=(n,col,v)=>{const c=getCell(n,col);clear(c);c.setAttribute('t','inlineStr');
+    const is=doc.createElementNS(NS,'is'),t=doc.createElementNS(NS,'t');t.textContent=String(v);is.appendChild(t);c.appendChild(is)};
+  const setAuto=(n,col,v)=>{const x=String(v).trim();(x!==''&&!isNaN(Number(x))&&/^\d+(\.\d+)?$/.test(x))?setNum(n,col,Number(x)):setStr(n,col,v)};
+  for(const x of cleared){const R=x.row+1;[COL.cnt,COL.cur].forEach(cc=>clear(getCell(R,cc)));if(txt(cellV(ws0,x.row,COL.obs)))clear(getCell(R,COL.obs));if(x.full)[COL.item,COL.code,COL.desc,COL.um].forEach(cc=>clear(getCell(R,cc)))}
+  // estilos de las filas nuevas: se copian de la primera fila libre (o de la primera de datos)
+  const sty={};for(const c of getRow(hdr2>=0?hdr2+2:2).getElementsByTagNameNS(NS,'c'))sty[XLSX.utils.decode_col(c.getAttribute('r').replace(/\d+/g,''))]=c.getAttribute('s');
+  const maxCol=Math.max(COL.item,COL.code,COL.desc,COL.um,COL.def,COL.cnt,COL.cur,COL.upd);
+  const gc=XLSX.utils.encode_col(COL.cur),ec=XLSX.utils.encode_col(COL.def);
+  for(const c of [...counts].reverse()){
+    if(c.kind==='mark'){
+      const R=c.row+1;
+      if(c.qty!=='')setAuto(R,COL.cnt,c.qty);
+      if(c.status==='ok')setStr(R,COL.cur,'OK');
+      else if(c.status==='noexcel'){
+        if(c.loc)setStr(R,COL.cur,c.loc);
+        /^\d+$/.test(c.code)?setNum(R,COL.code,c.code):setStr(R,COL.code,c.code);
+        if(c.desc)setStr(R,COL.desc,c.desc);
+      }else if(c.status==='new'&&c.loc)setStr(R,COL.cur,c.loc);
+      if(c.obs){const g=getCell(R,COL.cur).getAttribute('s');if(g)getCell(R,COL.obs).setAttribute('s',g);setStr(R,COL.obs,c.obs)}
+      else if(txt(cellV(ws0,c.row,COL.obs)))clear(getCell(R,COL.obs));
+      if(COL.upd>=0){const hc=getCell(R,COL.upd),hf=hc.getElementsByTagNameNS(NS,'f')[0]; // valor ya calculado de "Actualización"
+       if(hf&&(c.status==='ok'||c.loc)){let hv=hc.getElementsByTagNameNS(NS,'v')[0];if(!hv){hv=doc.createElementNS(NS,'v');hc.appendChild(hv)}
+         hv.textContent=c.status==='ok'?txt(cellV(ws0,c.row,COL.def)):c.loc;hc.setAttribute('t','str')}}
+    }else{
+      const R=nextRow++;maxItem++;
+      for(let i=0;i<=maxCol;i++)if(sty[i])getCell(R,i).setAttribute('s',sty[i]);
+      setNum(R,COL.item,maxItem);
+      /^\d+$/.test(c.code)?setNum(R,COL.code,c.code):setStr(R,COL.code,c.code);
+      if(c.desc)setStr(R,COL.desc,c.desc);
+      setStr(R,COL.um,c.um||'UNIDAD');
+      setAuto(R,COL.cnt,c.qty);
+      setStr(R,COL.cur,c.loc);
+      if(c.obs){const sx=sty[COL.cur];if(sx)getCell(R,COL.obs).setAttribute('s',sx);setStr(R,COL.obs,c.obs)}
+      if(COL.upd>=0){const h=getCell(R,COL.upd);clear(h);
+        const f=doc.createElementNS(NS,'f');f.textContent=`IF(${gc}${R}="OK",${ec}${R},${gc}${R})`;h.appendChild(f);
+        const v=doc.createElementNS(NS,'v');h.appendChild(v);h.setAttribute('t','str');v.textContent=c.loc}
+    }
+  }
+  // encabezados de las columnas que el archivo no tenía (CONTEO, Ubicación Actual u OBSERVACIÓN)
+  let maxUsed=maxCol;
+  {const hs=getCell(1,COL.upd>=0?COL.upd:0).getAttribute('s');
+   const cols=doc.getElementsByTagNameNS(NS,'cols')[0];
+   for(const h of hdrNew){
+     if(h.k==='obs'&&!counts.some(c=>c.obs))continue;
+     for(const hr of [1,hdr2>=0?hdr2+1:0].filter(Boolean)){const hc=getCell(hr,h.col);if(hs)hc.setAttribute('s',hs);setStr(hr,h.col,h.text)}
+     if(cols){const col=doc.createElementNS(NS,'col');col.setAttribute('min',h.col+1);col.setAttribute('max',h.col+1);col.setAttribute('width',h.k==='obs'?'30':'20');col.setAttribute('customWidth','1');cols.appendChild(col)}
+     maxUsed=Math.max(maxUsed,h.col);
+   }
+   if(counts.some(c=>c.obs))maxUsed=Math.max(maxUsed,COL.obs);
+  }
+  const dim=doc.getElementsByTagNameNS(NS,'dimension')[0];
+  if(dim){const rg=XLSX.utils.decode_range(dim.getAttribute('ref'));rg.e.r=Math.max(rg.e.r,nextRow-1);rg.e.c=Math.max(rg.e.c,maxUsed);dim.setAttribute('ref',XLSX.utils.encode_range(rg))}
+  zip.file(sheetPath,new XMLSerializer().serializeToString(doc));
+  // recalcular fórmulas al abrir y quitar calcChain
+  let w=await zip.file('xl/workbook.xml').async('string');
+  if(!/fullCalcOnLoad/.test(w))w=/<calcPr[^>]*>/.test(w)?w.replace(/<calcPr/,'<calcPr fullCalcOnLoad="1"'):w.replace('</workbook>','<calcPr fullCalcOnLoad="1"/></workbook>');
+  zip.file('xl/workbook.xml',w);
+  if(zip.file('xl/calcChain.xml')){
+    zip.remove('xl/calcChain.xml');
+    const ct=await zip.file('[Content_Types].xml').async('string');
+    zip.file('[Content_Types].xml',ct.replace(/<Override[^>]*calcChain[^>]*\/>/,''));
+    const rl=await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    zip.file('xl/_rels/workbook.xml.rels',rl.replace(/<Relationship [^>]*calcChain[^>]*\/>/,''));
+  }
+  return zip.generateAsync({type:'arraybuffer',compression:'DEFLATE'});
+}
+$('dlBtn').addEventListener('click',async()=>{
+  $('dlMsg').textContent='';
+  if(!origBuf){$('dlMsg').textContent='Carga el Excel primero.';return}
+  if(!counts.length){$('dlMsg').textContent='Aún no hay nada registrado.';return}
+  try{
+    const out=await buildXlsx();
+    const name=(($('outName').value||'').replace(/\.xlsx$/i,'').replace(/[\\\/:*?"<>|]+/g,'').trim()||fileName.replace(/\.xlsx?$/i,'')+'_contado')+'.xlsx';
+    let dl=null;try{dl=await claude.use('downloads')}catch(e){}
+    if(dl)await dl.save({filename:name,data:out});
+    else{ // web normal: descarga directa
+      const u=URL.createObjectURL(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);
+    }
+    dirty=0;persist();
+    $('dlMsg').innerHTML='<span class="badge ok">Descarga lista</span>';toast('✓ Excel descargado');
+  }catch(err){
+    $('dlMsg').textContent=err&&err.code==='declined'?'Cancelaste la descarga.':'No se pudo descargar: '+(err&&err.message||err);
+  }
+});
+$('copyBtn').addEventListener('click',async()=>{
+  const head=['Número de artículo','Descripción','CONTEO','Ubicación Actual','Estado','Ubicación en Excel','Observación'];
+  const rows=[head,...[...counts].reverse().map(c=>[c.code,c.desc,c.qty,c.status==='ok'?'OK':c.loc,LABEL[c.status],c.excelLocs||c.loc,c.obs||''])];
+  const t=rows.map(r=>r.map(x=>String(x??'').replace(/[\t\n]/g,' ')).join('\t')).join('\n');
+  $('copyTxt').value=t;
+  try{await navigator.clipboard.writeText(t);$('copyBtn').textContent='¡Copiado!';setTimeout(()=>$('copyBtn').textContent='Copiar',1500)}
+  catch(e){$('copyBox').style.display='block';$('copyTxt').focus();$('copyTxt').select()}
+});
+
+renderList();
+
+/* ===================== RONDA 2 · VALIDACIÓN ===================== */
+function buildAllRows(ws,rng){
+  allRows=[];
+  for(let r=1;r<=rng.e.r;r++){
+    const code=txt(cellV(ws,r,COL.code));
+    if(!code||/^n[uú]mero de art/i.test(code))continue;
+    allRows.push({row:r,code,desc:txt(cellV(ws,r,COL.desc)),um:txt(cellV(ws,r,COL.um)),def:txt(cellV(ws,r,COL.def)),F:txt(cellV(ws,r,COL.cnt)),G:txt(cellV(ws,r,COL.cur)),isNew:hdr2>=0&&r>hdr2});
+  }
+}
+// "A-01-A-2" y "A01-A-2" se agrupan igual: 10-A01-A-2
+const canon=x=>buildLoc(x).replace(/^([^-]+)-([A-Z])-(\d{2})(?=-|$)/,'$1-$2$3');
+// Series nuevas registradas en esta sesión (aún no están como fila del Excel): también se pueden buscar y validar
+function appendRows(){
+  return counts.filter(c=>c.kind==='append').map(c=>{
+    if(!c.id)c.id='a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    return{row:null,id:c.id,code:c.code,desc:c.desc||'',um:c.um||'UNIDAD',def:'',F:c.qty,G:c.loc,isNew:true,isApp:true,ent:c};
+  });
+}
+function stOf(r){
+  if(r.isApp)return{e:r.ent,qty:r.ent.qty,loc:r.ent.loc,val:!!r.ent.val};
+  const e=counts.find(c=>c.kind==='mark'&&c.row===r.row);
+  if(e)return{e,qty:e.qty,loc:r.isNew?e.loc:(e.status==='ok'?r.def:e.loc),val:!!e.val};
+  const g=r.G;
+  return{e:null,qty:r.F,loc:r.isNew?g:((g&&g.toUpperCase()!=='OK')?g:r.def),val:false};
+}
+function r2Rows(){
+  const f=buildLoc($('r2loc').value),q=normCode($('r2q').value),show=$('r2show').value;
+  const hit=x=>x&&(x===f||x.startsWith(f+'-'));
+  return allRows.concat(appendRows()).map(r=>({r,s:stOf(r)})).filter(({r,s})=>{
+    if(f&&!hit(canon(r.def))&&!hit(canon(s.loc)))return false;
+    if(q&&!normCode(r.code).includes(q)&&!normCode(r.desc).includes(q))return false;
+    if(show==='pend'&&s.val)return false;
+    if(show==='val'&&!s.val)return false;
+    return true;
+  }).sort((a,b)=>(a.s.val-b.s.val)||(canon(a.r.def||a.s.loc)+'|'+a.r.code).localeCompare(canon(b.r.def||b.s.loc)+'|'+b.r.code,'es',{numeric:true})); // pendientes arriba, validados abajo
+}
+const r2Open=new Set(); // validados que se abrieron para editar
+const rkey=r=>r.isApp?r.id:'r'+r.row;
+function cardHtml({r,s}){
+  if(s.val&&!r2Open.has(rkey(r))){
+    return `<div class="pcard valid mini" data-row="${r.row}" data-id="${esc(r.id||'')}"><div class="mrow"><span class="t">✓ <b>${esc(r.code)}</b> · ${esc(s.qty)} u. · ${esc(canon(s.loc||r.def)||'sin ubicación')}</span><button class="sec ed">Editar</button></div></div>`;
+  }
+  const cur=canon(s.loc||r.def),tail=locTail(cur);
+  const moved=r.def&&s.loc&&canon(s.loc)!==canon(r.def);
+  return `<div class="pcard${s.val?' valid':''}" data-row="${r.row}" data-id="${esc(r.id||'')}" data-orig="${esc(tail)}" data-raw="${esc(s.loc)}">
+    <div class="ph"><b>${esc(r.code)}</b><span class="muted">${esc(r.um)}</span>${s.val?'<span class="badge ok">✓ Validado</span>':'<span class="badge warn">Pendiente</span>'}${r.isNew?'<span class="badge bad">Serie agregada</span>':''}</div>
+    <div class="pd">${esc(r.desc)}</div>
+    <div class="pi">Excel: por defecto <b>${esc(r.def||'—')}</b> · actual <b>${esc(r.G||'—')}</b> · conteo <b>${esc(r.F||'—')}</b></div>
+    ${moved?`<div class="pi"><span class="badge warn">Ahora en ${esc(canon(s.loc))}</span></div>`:''}
+    <label>Cantidad</label><input class="q" type="number" inputmode="numeric" min="0" value="${esc(s.qty)}">
+    <label>Ubicación (vacía = se queda la del Excel)</label><div class="locrow"><span class="pre">${esc(BASE)}-</span><input class="l" autocomplete="off" autocapitalize="characters" value="" placeholder="${esc(tail||'sin ubicación')}"></div>
+    <div class="prev"></div>
+    <button class="green sv" style="width:100%;margin-top:8px">${s.val?'✓ Guardar cambios':'✓ Validar'}</button>
+  </div>`;
+}
+function r2Summary(list){
+  const v=list.filter(x=>x.s.val).length;
+  $('r2Sum').textContent=list.length?`${list.length} productos · ${v} validados · ${list.length-v} pendientes`:'No hay productos con ese filtro.';
+}
+function r2Render(){
+  if(!loaded)return;
+  // lista de ubicaciones y pasillos para elegir
+  if(!r2Ready){
+    const cnt=new Map(),pas=new Map();
+    allRows.concat(appendRows()).forEach(r=>{const s=stOf(r);new Set([canon(r.def),canon(s.loc)]).forEach(x=>{if(!x)return;cnt.set(x,(cnt.get(x)||0)+1);const t=x.split('-');if(t[0]===BASE&&t[1])pas.set(t[1],(pas.get(t[1])||0)+1)})});
+    $('r2sel').innerHTML='<option value="">Todas las ubicaciones</option>'+[...cnt.keys()].sort((a,b)=>a.localeCompare(b,'es',{numeric:true})).map(x=>`<option value="${esc(locTail(x))}">${esc(x)} · ${cnt.get(x)}</option>`).join('');
+    $('r2Pas').innerHTML='<span class="muted" style="align-self:center">Pasillos:</span>'+[...pas.keys()].sort((a,b)=>a.localeCompare(b,'es',{numeric:true})).map(x=>`<span class="chip" data-pas="${esc(x)}">${esc(x)} · ${pas.get(x)}</span>`).join('');
+    r2Ready=true;
+  }
+  const list=r2Rows();r2Summary(list);
+  const MAX=60;
+  $('r2List').innerHTML=list.slice(0,MAX).map(cardHtml).join('')+(list.length>MAX?`<div class="muted r2more" style="margin-top:10px">Mostrando ${MAX} de ${list.length}. Filtra más para ver el resto.</div>`:'');
+}
+let r2t;const r2Soon=()=>{clearTimeout(r2t);r2t=setTimeout(r2Render,150)};
+$('r2loc').addEventListener('input',()=>{const v=$('r2loc').value.trim();$('r2sel').value=[...$('r2sel').options].some(o=>o.value===v)?v:'';r2Soon()});
+$('r2q').addEventListener('input',r2Soon);
+$('r2sel').addEventListener('change',()=>{$('r2loc').value=$('r2sel').value;saveDraft();r2Render()});
+$('r2show').addEventListener('change',r2Render);
+$('r2Pas').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;$('r2loc').value=c.dataset.pas;$('r2sel').value='';saveDraft();r2Render()});
+function afterSave(r,qty,wasVal){
+  r2Open.delete(rkey(r));
+  const list=$('r2List');
+  const nc=list.querySelector(r.isApp?'.pcard[data-id="'+r.id+'"]':'.pcard[data-row="'+r.row+'"]');
+  if(nc){
+    if(!wasVal){ // pasa de pendiente a validado: se achica y baja con los validados, sin tocar lo que escribiste en las demás
+      const firstVal=[...list.querySelectorAll('.pcard.valid')].find(x=>x!==nc);
+      if(firstVal)list.insertBefore(nc,firstVal);
+      else{const more=list.querySelector('.r2more');more?list.insertBefore(nc,more):list.appendChild(nc)}
+    }
+    nc.classList.add('flash');
+  }
+  r2Summary(r2Rows());
+  toast('✓ Guardado · '+r.code+' · '+qty+' u.');
+  const nx=list.querySelector('.pcard:not(.valid)');
+  if(nx&&!wasVal)nx.scrollIntoView({block:'center',behavior:'smooth'}); // te lleva a lo que falta
+}
+$('r2List').addEventListener('input',e=>{
+  if(!e.target.classList.contains('l'))return;
+  const b=buildLoc(e.target.value);e.target.closest('.pcard').querySelector('.prev').textContent=b?'Se guardará: '+b:'';
+});
+$('r2List').addEventListener('click',e=>{
+  const ed=e.target.closest('.ed');
+  const btn=ed||e.target.closest('.sv');if(!btn)return;
+  const card=btn.closest('.pcard'),r=card.dataset.id?appendRows().find(x=>x.id===card.dataset.id):allRows.find(x=>x.row===+card.dataset.row);if(!r)return;
+  if(ed){r2Open.add(rkey(r));card.outerHTML=cardHtml({r,s:stOf(r)});const nc=$('r2List').querySelector(r.isApp?'.pcard[data-id="'+r.id+'"]':'.pcard[data-row="'+r.row+'"]');if(nc)nc.querySelector('.q').focus();return}
+  const wasVal=stOf(r).val;
+  const qty=card.querySelector('.q').value.trim(),prev=card.querySelector('.prev');
+  if(qty===''){prev.innerHTML='<span class="badge bad">Falta la cantidad</span>';card.querySelector('.q').focus();return}
+  const lv=card.querySelector('.l').value.trim();
+  if(r.isApp){ // serie agregada en esta sesión: se actualiza tal cual
+    const en=r.ent;en.qty=qty;if(lv)en.loc=buildLoc(lv);en.val=true;save();
+    card.outerHTML=cardHtml({r,s:stOf(r)});afterSave(r,qty,wasVal);return;
+  }
+  const cur=stOf(r);let status,loc;
+  if(!lv){ // sin escribir ubicación: no se cambia, queda la que tiene el Excel
+    if(r.isNew){status='noexcel';loc=cur.loc}
+    else if(cur.e&&cur.e.status!=='sinub'){status=cur.e.status;loc=cur.e.loc}
+    else if(r.G&&r.G.toUpperCase()!=='OK'){status='new';loc=r.G}
+    else{status='ok';loc=r.def}
+  }else{
+    const full=buildLoc(lv);
+    if(r.isNew){status='noexcel';loc=full}
+    else{const same=canon(full)===canon(r.def);status=same?'ok':'new';loc=same?r.def:full}
+  }
+  const old=counts.find(c=>c.kind==='mark'&&c.row===r.row);
+  counts=counts.filter(c=>!(c.kind==='mark'&&c.row===r.row));
+  counts.unshift({kind:'mark',row:r.row,code:r.code,desc:r.desc,loc,qty,status,excelLocs:r.def,obs:old?old.obs:'',val:true,ts:'ronda 2'});
+  cleared=cleared.filter(c=>c.row!==r.row);save();
+  card.outerHTML=cardHtml({r,s:stOf(r)});
+  afterSave(r,qty,wasVal);
+});
+/* ===================== MODOS ===================== */
+function applyMode(){
+  $('tab1').classList.toggle('on',mode==='1');$('tab2').classList.toggle('on',mode==='2');
+  const sh=(id,v)=>$(id).style.display=v?'block':'none';
+  sh('scanCard',loaded&&mode==='1');sh('listCard',loaded&&mode==='1');sh('r2Card',loaded&&mode==='2');sh('exportCard',loaded);
+  if(loaded&&mode==='2'){r2Ready=false;r2Render()}
+  if(loaded&&mode==='1'){renderList();update()}
+}
+function setMode(m){mode=m;try{localStorage.setItem('inv_mode',m)}catch(e){}applyMode();if(m==='1'&&loaded)$('code').focus()}
+$('tab1').addEventListener('click',()=>setMode('1'));$('tab2').addEventListener('click',()=>setMode('2'));
+applyMode();
+if(window.__STANDALONE&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+restoreSession();
+</script>
+</body>
+</html>
