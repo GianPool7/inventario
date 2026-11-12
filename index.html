@@ -44,6 +44,16 @@ select{width:100%;padding:12px;font-size:17px;border:1px solid #c9ced6;border-ra
 .chip{background:#e8eefb;color:#1f3a5f;border-radius:14px;padding:6px 10px;font-size:14px;cursor:pointer}
 .chip.done{background:#dff5e3;color:#1b6a2c}
 .chip.on{background:#1f3a5f;color:#fff}
+[hidden]{display:none!important}
+.camb{flex:0 0 auto!important;padding:10px 14px;font-size:20px}
+#camModal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:flex;align-items:center;justify-content:center;padding:12px}
+.camBox{background:#fff;border-radius:12px;padding:12px;width:100%;max-width:520px;max-height:100%;overflow:auto}
+.camView{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:3/4;max-height:60vh;margin:0 auto}
+.camView video{width:100%;height:100%;object-fit:cover;display:block}
+.camGuide{position:absolute;left:6%;right:6%;top:30%;bottom:30%;border:3px solid #ffd54a;border-radius:8px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+#camImg{width:100%;border-radius:8px;border:1px solid #ccc;background:#000;display:block}
+#camMsg{margin:8px 0;font-weight:600;color:#1f3a5f}
+.chip.big{font-size:18px;padding:10px 14px}.chip.cOk{background:#1b8a3a;color:#fff}.chip.cNear{background:#fff1d6;color:#8a5a00}.chip.cRaw{background:#e6e9ee;color:#333}
 .badge{display:inline-block;border-radius:6px;padding:4px 8px;font-size:13px;font-weight:600}
 .ok{background:#dff5e3;color:#1b6a2c}.warn{background:#fff1d6;color:#8a5a00}.bad{background:#fde1df;color:#a3211a}
 .item{border-top:1px solid #eee;padding:10px 0;display:flex;gap:8px;align-items:flex-start}
@@ -73,7 +83,7 @@ textarea{width:100%;height:140px;font-size:13px}
   <b>2. Registrar lo que dicta</b>
   <div id="editBanner" class="banner" style="display:none"><span id="editTxt"></span> <button class="sec" id="cancelEdit" style="padding:6px 10px;margin-left:6px">Cancelar edición</button></div>
   <label for="code">Número de artículo / serie</label>
-  <input id="code" autocomplete="off" autocapitalize="characters" placeholder="Código dictado">
+  <div class="row"><input id="code" autocomplete="off" autocapitalize="characters" placeholder="Código dictado"><button class="sec camb" data-cam="code" title="Leer con la cámara">📷</button></div>
   <div id="found"></div>
   <div id="sameBox" style="display:none"><label class="chk"><input type="checkbox" id="same"> Ubicación igual (OK)</label></div>
   <label for="loc">Ubicación (separa con comas: pasillo, letra, nivel…)</label>
@@ -115,7 +125,7 @@ textarea{width:100%;height:140px;font-size:13px}
   <label for="r2loc">…o escribe la ubicación (ej. A02 = pasillo, A02,N = pasillo y letra)</label>
   <div class="locrow"><span class="pre" id="r2Pre">10-</span><input id="r2loc" autocomplete="off" autocapitalize="characters" placeholder="A02,N"></div>
   <div class="row">
-    <div><label for="r2q">Código o descripción</label><input id="r2q" autocomplete="off" placeholder="Buscar"></div>
+    <div><label for="r2q">Código o descripción</label><div class="row"><input id="r2q" autocomplete="off" placeholder="Buscar" style="min-width:0"><button class="sec camb" data-cam="r2q" title="Leer con la cámara">📷</button></div></div>
     <div><label for="r2show">Mostrar</label><select id="r2show"><option value="all">Todos</option><option value="pend">Pendientes</option><option value="val">Validados</option></select></div>
   </div>
   <div class="prev" id="r2Sum" style="margin-top:10px"></div>
@@ -140,6 +150,21 @@ textarea{width:100%;height:140px;font-size:13px}
 </div>
 </main>
 <div id="toast"></div>
+<div id="camModal" hidden>
+  <div class="camBox">
+    <div class="camView" id="camView"><video id="camVid" playsinline muted></video><div class="camGuide"></div></div>
+    <img id="camImg" hidden alt="Foto tomada">
+    <div id="camMsg"></div>
+    <div id="camCands" class="chips"></div>
+    <div id="camManual" hidden><label for="camVal">Número (corrígelo mirando la foto)</label><input id="camVal" inputmode="numeric" autocomplete="off"></div>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap">
+      <button id="camShot">Tomar foto</button>
+      <button id="camUse" class="green" hidden>Usar</button>
+      <button id="camAgain" class="sec" hidden>Otra foto</button>
+      <button id="camClose" class="sec">Cerrar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -776,6 +801,141 @@ $('r2List').addEventListener('click',e=>{
   card.outerHTML=cardHtml({r,s:stOf(r)});
   afterSave(r,qty,wasVal);
 });
+/* ===================== CÁMARA · código de barras y números (OCR) ===================== */
+// Nada se usa sin confirmar: se muestra la foto y los números encontrados; tú eliges o corriges.
+let camStream=null,camTarget=null,camLoop=null,camBusy=false,barDet=null,ocrWorker=null,ocrIdle=null;
+const camMsg=t=>$('camMsg').textContent=t;
+async function getBarDet(){ // lector nativo de código de barras (Chrome Android); si no hay, solo OCR
+  if(barDet!==null)return barDet;
+  try{if('BarcodeDetector' in window){const f=await BarcodeDetector.getSupportedFormats();barDet=f.length?new BarcodeDetector({formats:f}):false}else barDet=false}catch(e){barDet=false}
+  return barDet;
+}
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('No se pudo cargar el lector de números'));document.head.appendChild(s)})}
+// Tesseract se carga solo al usar la cámara (no pesa al abrir la app) y se libera tras 2 min sin uso
+function ocrGet(){
+  clearTimeout(ocrIdle);
+  if(!ocrWorker){
+    const base=new URL('ocr/',location.href).href;
+    ocrWorker=(window.Tesseract?Promise.resolve():loadScript('ocr/tesseract.min.js'))
+      .then(()=>Tesseract.createWorker('eng',1,{workerPath:base+'worker.min.js',corePath:base,langPath:base,workerBlobURL:false,gzip:true}))
+      .then(async w=>{await w.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11'});return w});
+    ocrWorker.catch(()=>{ocrWorker=null});
+  }
+  return ocrWorker;
+}
+function ocrSleep(){clearTimeout(ocrIdle);ocrIdle=setTimeout(async()=>{const w=ocrWorker;ocrWorker=null;if(w)try{(await w).terminate()}catch(e){}},120000)}
+function camReset(){
+  $('camView').hidden=false;$('camImg').hidden=true;$('camCands').innerHTML='';$('camManual').hidden=true;
+  $('camUse').hidden=true;$('camAgain').hidden=true;$('camShot').hidden=false;camBusy=false;
+}
+async function camOpen(target){
+  camTarget=target;$('camModal').hidden=false;camReset();camMsg('Abriendo cámara…');
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){camMsg('Este navegador no permite usar la cámara (necesita https).');return}
+  try{
+    camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    if($('camModal').hidden){camStop();return} // cerraste mientras abría
+    const v=$('camVid');v.srcObject=camStream;await v.play();
+    camMsg('Pon el número o el código de barras dentro del recuadro y toca "Tomar foto".');
+    ocrGet().catch(()=>{}); // va cargando el lector mientras apuntas
+    const bd=await getBarDet();if(bd)camScan(bd);
+  }catch(e){camMsg(e&&e.name==='NotAllowedError'?'No diste permiso a la cámara. Actívalo en los permisos del navegador.':'No se pudo abrir la cámara: '+(e&&e.message||e))}
+}
+function camStop(){clearTimeout(camLoop);camLoop=null;if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null}$('camVid').srcObject=null}
+function camClose(){camStop();$('camModal').hidden=true;camBusy=false;ocrSleep()}
+// Código de barras en vivo: si aparece uno, congela la foto y pide confirmar
+function camScan(bd){
+  const tick=async()=>{
+    if(!camStream||camBusy)return;
+    try{const r=await bd.detect($('camVid'));const x=r.find(x=>x.rawValue);
+      if(x&&camStream&&!camBusy){camBusy=true;const c=camFrame(false);camStop();camShowImg(c);camCands([x.rawValue.trim()],'Código de barras leído. Confírmalo con la foto:');return}}catch(e){}
+    camLoop=setTimeout(tick,350);
+  };
+  camLoop=setTimeout(tick,500);
+}
+// Foto del video; crop=true recorta al recuadro amarillo (más preciso)
+function camFrame(crop){
+  const v=$('camVid'),vw=v.videoWidth,vh=v.videoHeight;
+  let sx=0,sy=0,sw=vw,sh=vh;
+  if(crop){
+    const b=v.getBoundingClientRect(),g=document.querySelector('.camGuide').getBoundingClientRect();
+    const s=Math.max(b.width/vw,b.height/vh),ox=(b.width-vw*s)/2,oy=(b.height-vh*s)/2;
+    sx=Math.max(0,(g.left-b.left-ox)/s);sy=Math.max(0,(g.top-b.top-oy)/s);
+    sw=Math.min(vw-sx,g.width/s);sh=Math.min(vh-sy,g.height/s);
+  }
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(sw));c.height=Math.max(1,Math.round(sh));
+  c.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);return c;
+}
+function camShowImg(c){$('camImg').src=c.toDataURL('image/jpeg',.85);$('camImg').hidden=false;$('camView').hidden=true;$('camShot').hidden=true}
+// Escala de grises y tamaño adecuado para que Tesseract lea mejor
+function ocrPrep(c){
+  const k=c.width<1200?Math.min(3,1200/c.width):1;
+  const o=document.createElement('canvas');o.width=Math.round(c.width*k);o.height=Math.round(c.height*k);
+  const x=o.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(c,0,0,o.width,o.height);
+  const d=x.getImageData(0,0,o.width,o.height),p=d.data;
+  for(let i=0;i<p.length;i+=4){const g=.299*p[i]+.587*p[i+1]+.114*p[i+2];p[i]=p[i+1]=p[i+2]=g}
+  x.putImageData(d,0,0);return o;
+}
+// Todos los números del texto: cada grupo de dígitos y también cada línea con los espacios unidos ("100 234" -> 100234)
+function ocrNums(text){
+  const s=new Set();
+  for(const line of String(text||'').split('\n')){
+    (line.match(/\d{3,}/g)||[]).forEach(n=>s.add(n));
+    const j=line.replace(/\D/g,'');if(j.length>=3)s.add(j);
+  }
+  return [...s];
+}
+async function camShot(){
+  if(!camStream||camBusy)return;camBusy=true;clearTimeout(camLoop);
+  const c=camFrame(true);camStop();camShowImg(c);camMsg('Leyendo números… (2 a 4 segundos)');
+  try{
+    const bd=await getBarDet();
+    if(bd){try{const x=(await bd.detect(c)).find(x=>x.rawValue);if(x){camCands([x.rawValue.trim()],'Código de barras leído. Confírmalo con la foto:');return}}catch(e){}}
+    const w=await ocrGet();
+    const {data}=await w.recognize(ocrPrep(c));
+    const nums=ocrNums(data.text);
+    camCands(nums,nums.length?'Mira la foto y toca el número correcto (verde = está en el Excel):':'No encontré números. Escríbelo mirando la foto o toma otra foto.');
+  }catch(e){camCands([],'No se pudo leer ('+(e&&e.message||e)+'). Escríbelo mirando la foto.')}
+}
+// Distancia de edición (con tope): para sugerir el código del Excel si el OCR confundió dígitos
+function editDist(a,b,max){
+  if(Math.abs(a.length-b.length)>max)return max+1;
+  let prev=Array.from({length:b.length+1},(_,j)=>j);
+  for(let i=1;i<=a.length;i++){
+    const cur=[i];let best=i;
+    for(let j=1;j<=b.length;j++){cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));if(cur[j]<best)best=cur[j]}
+    if(best>max)return max+1;prev=cur;
+  }
+  return prev[b.length];
+}
+function camCodes(){const s=new Set(idx.keys());allRows.forEach(r=>s.add(normCode(r.code)));counts.forEach(c=>c.code&&s.add(normCode(c.code)));return s}
+function camCands(nums,msg){
+  camBusy=false;camMsg(msg);
+  const all=camCodes(),out=[],seen=new Set(),push=(v,c,t)=>{if(!seen.has(v)){seen.add(v);out.push({v,c,t})}};
+  nums.forEach(n=>{if(all.has(normCode(n)))push(n,'cOk','✓ '+n)});
+  // parecidos del Excel: hasta 1 dígito distinto (2 si el número es largo), los más cercanos primero
+  nums.forEach(n=>{const k=normCode(n);if(all.has(k))return;const max=k.length>=6?2:1;
+    const m=[];for(const x of all){const d=editDist(k,x,max);if(d<=max)m.push([d,x])}
+    m.sort((a,b)=>a[0]-b[0]).slice(0,3).forEach(([,x])=>push(x,'cNear','¿'+x+'?'))});
+  nums.forEach(n=>push(n,'cRaw',n));
+  $('camCands').innerHTML=out.map(o=>`<span class="chip big ${o.c}" data-v="${esc(o.v)}">${esc(o.t)}</span>`).join('');
+  $('camManual').hidden=false;$('camVal').value=out.length?out[0].v:'';
+  $('camUse').hidden=false;$('camAgain').hidden=false;$('camShot').hidden=true;
+}
+function camUse(v){
+  v=String(v||'').trim();if(!v){$('camVal').focus();return}
+  const t=$(camTarget);t.value=v;t.dispatchEvent(new Event('input',{bubbles:true}));
+  camClose();toast('✓ Código '+v);
+  if(camTarget==='code')$('loc').focus();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cam]');if(b)camOpen(b.dataset.cam)});
+$('camShot').addEventListener('click',camShot);
+$('camClose').addEventListener('click',camClose);
+$('camAgain').addEventListener('click',()=>camOpen(camTarget));
+$('camUse').addEventListener('click',()=>camUse($('camVal').value));
+$('camVal').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();camUse($('camVal').value)}});
+$('camCands').addEventListener('click',e=>{const c=e.target.closest('.chip');if(c)camUse(c.dataset.v)});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&camStream)camClose()}); // al cambiar de app se apaga la cámara
+
 /* ===================== MODOS ===================== */
 function applyMode(){
   ['1','2','3'].forEach(m=>$('tab'+m).classList.toggle('on',mode===m));

@@ -21,6 +21,12 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 - Observación opcional; editar (✎) y borrar (×) entradas; nombre de archivo editable al descargar.
 - Se descarga **el mismo Excel con su formato**.
 
+## Cámara (📷 en Ronda 1 "código" y en el buscador de Ronda 2/3)
+- `getUserMedia` dentro de la app (no abrir la app de cámara: Brave se cerraría). Recuadro amarillo → se recorta la foto a esa zona.
+- Código de barras: `BarcodeDetector` nativo (en vivo y sobre la foto). OCR: **Tesseract.js 5.1.1 local en `ocr/`** (solo dígitos, PSM 11), se carga al abrir la cámara y se libera tras 2 min sin uso.
+- **Nunca se usa un número sin confirmar**: se muestra la foto + todos los números detectados (verde = existe en el Excel, ámbar `¿…?` = código del Excel parecido por distancia de edición ≤1, ≤2 si tiene ≥6 dígitos, gris = leído tal cual) + campo editable.
+- La cámara se apaga al cambiar de app (`visibilitychange`). El 1er uso del OCR necesita internet (luego queda en caché del SW / IndexedDB de Tesseract).
+
 ## Ubicaciones
 - Base fija `10-` (se detecta como el primer segmento más común, `BASE`); no se escribe.
 - Se teclean las partes separadas por comas, espacios o guiones: `A02,K,11,A` → `10-A02-K-11-A`.
@@ -50,8 +56,8 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 - Móvil: no usar `accept` en el input de archivo (el celular bloquea la selección).
 
 ## Build web / PWA (carpeta de hosting)
-- `index.html`, `xlsx.full.min.js`, `jszip.min.js` (locales, sin CDN), `sw.js` (network-first), `manifest.webmanifest`, `icon-192.png`, `icon-512.png`; `window.__STANDALONE=true` registra el service worker.
-- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v8) para que los celulares tomen la versión nueva. El SW usa la caché si la red tarda >3 s.
+- `index.html`, `xlsx.full.min.js`, `jszip.min.js` (locales, sin CDN), carpeta `ocr/` (Tesseract, ~11 MB), `sw.js` (network-first), `manifest.webmanifest`, `icon-192.png`, `icon-512.png`; `window.__STANDALONE=true` registra el service worker.
+- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v9) para que los celulares tomen la versión nueva. El SW usa la caché si la red tarda >3 s.
 
 ## Pruebas
 - Probar en Chrome real con Playwright (emulación táctil, viewport ~390×780) sirviendo la carpeta con `python3 -m http.server`.
