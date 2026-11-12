@@ -29,7 +29,7 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 
 ## Ronda 2 (validación de datos de otra persona)
 - Se carga el Excel de otra persona; sus datos importados se pueden editar.
-- Filtros: ubicación (texto, `<select>` y chips de pasillo), código/descripción, Pendientes/Validados.
+- Filtros: por **grupo**, no por ubicación exacta: chips de pasillo (`10-A02`) → chips de letra de ese pasillo (`10-A02-N`, todos sus niveles/posiciones) (`r2Chips()`, `r2Pas`/`r2Let`); también texto (`A02,N`); código/descripción; Pendientes/Validados. Se quitó el `<select>` de ubicación exacta.
 - Cada tarjeta muestra los datos del Excel y permite editar Cantidad y Ubicación (ubicación vacía = se mantiene la del Excel; G vacía pasa a OK).
 - Incluye productos "agregados" (filas bajo la 2ª cabecera y los agregados en sesión).
 - **Pendientes arriba; al validar/guardar la tarjeta se achica a una línea y baja** con los validados, sin re-renderizar las demás (conserva lo escrito). Botón "Editar" la reabre. Toast + animación `flash` de confirmación.

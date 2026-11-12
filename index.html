@@ -43,6 +43,7 @@ select{width:100%;padding:12px;font-size:17px;border:1px solid #c9ced6;border-ra
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .chip{background:#e8eefb;color:#1f3a5f;border-radius:14px;padding:6px 10px;font-size:14px;cursor:pointer}
 .chip.done{background:#dff5e3;color:#1b6a2c}
+.chip.on{background:#1f3a5f;color:#fff}
 .badge{display:inline-block;border-radius:6px;padding:4px 8px;font-size:13px;font-weight:600}
 .ok{background:#dff5e3;color:#1b6a2c}.warn{background:#fff1d6;color:#8a5a00}.bad{background:#fde1df;color:#a3211a}
 .item{border-top:1px solid #eee;padding:10px 0;display:flex;gap:8px;align-items:flex-start}
@@ -108,12 +109,11 @@ textarea{width:100%;height:140px;font-size:13px}
 
 <div class="card" id="r2Card" style="display:none">
   <b>Validar por ubicación</b>
-  <div class="muted" style="margin-top:4px">Elige una ubicación (o solo el pasillo) y revisa cada producto. Corrige la cantidad y toca Validar. Si no escribes ubicación, se queda la que tiene el Excel.</div>
-  <label for="r2loc">Ubicación (ej. A02,A,1,A o solo A02 para todo el pasillo)</label>
-  <div class="locrow"><span class="pre" id="r2Pre">10-</span><input id="r2loc" autocomplete="off" autocapitalize="characters" placeholder="A02,A,1,A"></div>
-  <label for="r2sel">…o elige una ubicación de la lista</label>
-  <select id="r2sel"><option value="">Todas las ubicaciones</option></select>
-  <div class="chips" id="r2Pas"></div>
+  <div class="muted" style="margin-top:4px">Elige el pasillo y luego la letra para ir a un solo sitio. Corrige la cantidad y toca Validar. Si no escribes ubicación, se queda la que tiene el Excel.</div>
+  <div class="chips" id="r2Pas" style="margin-top:10px"></div>
+  <div class="chips" id="r2Let"></div>
+  <label for="r2loc">…o escribe la ubicación (ej. A02 = pasillo, A02,N = pasillo y letra)</label>
+  <div class="locrow"><span class="pre" id="r2Pre">10-</span><input id="r2loc" autocomplete="off" autocapitalize="characters" placeholder="A02,N"></div>
   <div class="row">
     <div><label for="r2q">Código o descripción</label><input id="r2q" autocomplete="off" placeholder="Buscar"></div>
     <div><label for="r2show">Mostrar</label><select id="r2show"><option value="all">Todos</option><option value="pend">Pendientes</option><option value="val">Validados</option></select></div>
@@ -648,7 +648,7 @@ function stOf(r){
   return{e:null,qty:r.F,loc:r.isNew?g:((g&&g.toUpperCase()!=='OK')?g:r.def),val:false};
 }
 function r2Rows(){
-  const f=buildLoc($('r2loc').value),q=normCode($('r2q').value),show=$('r2show').value;
+  const f=canon($('r2loc').value),q=normCode($('r2q').value),show=$('r2show').value;
   const hit=x=>x&&(x===f||x.startsWith(f+'-'));
   return allRows.concat(appendRows()).map(r=>({r,s:stOf(r)})).filter(({r,s})=>{
     if(f&&!hit(canon(r.def))&&!hit(canon(s.loc)))return false;
@@ -682,27 +682,40 @@ function r2Summary(list){
   const v=list.filter(x=>x.s.val).length;
   $('r2Sum').textContent=list.length?`${list.length} productos · ${v} validados · ${list.length-v} pendientes`:'No hay productos con ese filtro.';
 }
+let r2Pas=new Map(),r2Let=new Map(); // pasillo -> nº productos ; pasillo -> (letra -> nº productos)
+const byLoc=(a,b)=>a.localeCompare(b,'es',{numeric:true});
+function r2Sel(){const t=canon($('r2loc').value).split('-');return t[0]===BASE?{p:t[1]||'',l:t[2]||''}:{p:'',l:''}}
+function r2Chips(){
+  const {p,l}=r2Sel();
+  const ch=(attr,v,label,on)=>`<span class="chip${on?' on':''}" ${attr}="${esc(v)}">${esc(label)}</span>`;
+  $('r2Pas').innerHTML=r2Pas.size?'<span class="muted" style="align-self:center">Pasillo:</span>'+ch('data-pas','','Todos',!p)+[...r2Pas.keys()].sort(byLoc).map(x=>ch('data-pas',x,x+' · '+r2Pas.get(x),x===p)).join(''):'';
+  const L=r2Let.get(p);
+  $('r2Let').innerHTML=L?'<span class="muted" style="align-self:center">Letra:</span>'+ch('data-let','','Todas',!l)+[...L.keys()].sort(byLoc).map(x=>ch('data-let',x,x+' · '+L.get(x),x===l)).join(''):'';
+}
 function r2Render(){
   if(!loaded)return;
   markIdx=null;
-  // lista de ubicaciones y pasillos para elegir
+  // grupos para elegir: pasillo (10-A02) -> letra (10-A02-N); no por ubicación exacta
   if(!r2Ready){
-    const cnt=new Map(),pas=new Map();
-    allRows.concat(appendRows()).forEach(r=>{const s=stOf(r);new Set([canon(r.def),canon(s.loc)]).forEach(x=>{if(!x)return;cnt.set(x,(cnt.get(x)||0)+1);const t=x.split('-');if(t[0]===BASE&&t[1])pas.set(t[1],(pas.get(t[1])||0)+1)})});
-    $('r2sel').innerHTML='<option value="">Todas las ubicaciones</option>'+[...cnt.keys()].sort((a,b)=>a.localeCompare(b,'es',{numeric:true})).map(x=>`<option value="${esc(locTail(x))}">${esc(x)} · ${cnt.get(x)}</option>`).join('');
-    $('r2Pas').innerHTML='<span class="muted" style="align-self:center">Pasillos:</span>'+[...pas.keys()].sort((a,b)=>a.localeCompare(b,'es',{numeric:true})).map(x=>`<span class="chip" data-pas="${esc(x)}">${esc(x)} · ${pas.get(x)}</span>`).join('');
+    r2Pas=new Map();r2Let=new Map();
+    allRows.concat(appendRows()).forEach(r=>{const s=stOf(r);const ps=new Set(),ls=new Set();
+      [canon(r.def),canon(s.loc)].forEach(x=>{const t=x?x.split('-'):[];if(t[0]!==BASE||!t[1])return;ps.add(t[1]);if(t[2])ls.add(t[1]+'|'+t[2])});
+      ps.forEach(p=>r2Pas.set(p,(r2Pas.get(p)||0)+1));
+      ls.forEach(k=>{const [p,l]=k.split('|');if(!r2Let.has(p))r2Let.set(p,new Map());const m=r2Let.get(p);m.set(l,(m.get(l)||0)+1)})});
     r2Ready=true;
   }
+  r2Chips();
   const list=r2Rows();r2Summary(list);
   const MAX=60;
   $('r2List').innerHTML=list.slice(0,MAX).map(cardHtml).join('')+(list.length>MAX?`<div class="muted r2more" style="margin-top:10px">Mostrando ${MAX} de ${list.length}. Filtra más para ver el resto.</div>`:'');
 }
 let r2t;const r2Soon=()=>{clearTimeout(r2t);r2t=setTimeout(r2Render,150)};
-$('r2loc').addEventListener('input',()=>{const v=$('r2loc').value.trim();$('r2sel').value=[...$('r2sel').options].some(o=>o.value===v)?v:'';r2Soon()});
+$('r2loc').addEventListener('input',r2Soon);
 $('r2q').addEventListener('input',r2Soon);
-$('r2sel').addEventListener('change',()=>{$('r2loc').value=$('r2sel').value;saveDraft();r2Render()});
 $('r2show').addEventListener('change',r2Render);
-$('r2Pas').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;$('r2loc').value=c.dataset.pas;$('r2sel').value='';saveDraft();r2Render()});
+// tocar pasillo -> solo ese pasillo; tocar letra -> pasillo + letra (todos sus niveles y posiciones)
+$('r2Pas').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;$('r2loc').value=c.dataset.pas;saveDraft();r2Render()});
+$('r2Let').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;const {p}=r2Sel();$('r2loc').value=c.dataset.let?p+','+c.dataset.let:p;saveDraft();r2Render()});
 function afterSave(r,qty,wasVal){
   r2Open.delete(rkey(r));
   const list=$('r2List');

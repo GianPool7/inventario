@@ -1,5 +1,5 @@
 // Guarda la app en el celular: abre rápido y también sin internet (después de la primera visita)
-const V='inventario-v6';
+const V='inventario-v7';
 const FILES=['./','index.html','xlsx.full.min.js','jszip.min.js','manifest.webmanifest','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
