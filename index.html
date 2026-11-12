@@ -623,7 +623,7 @@ function buildAllRows(ws,rng){
   for(let r=1;r<=rng.e.r;r++){
     const code=txt(cellV(ws,r,COL.code));
     if(!code||/^n[uú]mero de art/i.test(code))continue;
-    allRows.push({row:r,code,desc:txt(cellV(ws,r,COL.desc)),um:txt(cellV(ws,r,COL.um)),def:txt(cellV(ws,r,COL.def)),F:txt(cellV(ws,r,COL.cnt)),G:txt(cellV(ws,r,COL.cur)),isNew:hdr2>=0&&r>hdr2});
+    allRows.push({row:r,code,desc:txt(cellV(ws,r,COL.desc)),um:txt(cellV(ws,r,COL.um)),def:txt(cellV(ws,r,COL.def)),F:txt(cellV(ws,r,COL.cnt)),G:txt(cellV(ws,r,COL.cur)),U:COL.upd>=0?txt(cellV(ws,r,COL.upd)):'',isNew:hdr2>=0&&r>hdr2});
   }
 }
 // "A-01-A-2" y "A01-A-2" se agrupan igual: 10-A01-A-2
@@ -647,30 +647,37 @@ function stOf(r){
   const g=r.G;
   return{e:null,qty:r.F,loc:r.isNew?g:((g&&g.toUpperCase()!=='OK')?g:r.def),val:false};
 }
+// Dónde está el producto = columna "Actualización" del Excel; si lo cambiaste en la app, la nueva ubicación
+function locOf(r,s){
+  if(r.isApp)return s.loc;
+  if((!s.e||s.e.imp)&&r.U)return r.U;
+  return s.loc||r.def;
+}
 function r2Rows(){
   const f=canon($('r2loc').value),q=normCode($('r2q').value),show=$('r2show').value;
   const hit=x=>x&&(x===f||x.startsWith(f+'-'));
-  return allRows.concat(appendRows()).map(r=>({r,s:stOf(r)})).filter(({r,s})=>{
-    if(f&&!hit(canon(r.def))&&!hit(canon(s.loc)))return false;
+  return allRows.concat(appendRows()).map(r=>{const s=stOf(r);return{r,s,L:canon(locOf(r,s))}}).filter(({r,s,L})=>{
+    if(f&&!hit(L))return false;
     if(q&&!normCode(r.code).includes(q)&&!normCode(r.desc).includes(q))return false;
     if(show==='pend'&&s.val)return false;
     if(show==='val'&&!s.val)return false;
     return true;
-  }).map(x=>(x.k=canon(x.r.def||x.s.loc)+'|'+x.r.code,x))
+  }).map(x=>(x.k=x.L+'|'+x.r.code,x))
     .sort((a,b)=>(a.s.val-b.s.val)||a.k.localeCompare(b.k,'es',{numeric:true})); // pendientes arriba, validados abajo
 }
 const r2Open=new Set(); // validados que se abrieron para editar
 const rkey=r=>r.isApp?r.id:'r'+r.row;
 function cardHtml({r,s}){
   if(s.val&&!r2Open.has(rkey(r))){
-    return `<div class="pcard valid mini" data-row="${r.row}" data-id="${esc(r.id||'')}"><div class="mrow"><span class="t">✓ <b>${esc(r.code)}</b> · ${esc(s.qty)} u. · ${esc(canon(s.loc||r.def)||'sin ubicación')}</span><button class="sec ed">Editar</button></div></div>`;
+    return `<div class="pcard valid mini" data-row="${r.row}" data-id="${esc(r.id||'')}"><div class="mrow"><span class="t">✓ <b>${esc(r.code)}</b> · ${esc(s.qty)} u. · ${esc(canon(locOf(r,s))||'sin ubicación')}</span><button class="sec ed">Editar</button></div></div>`;
   }
   const cur=canon(s.loc||r.def),tail=locTail(cur);
   const moved=r.def&&s.loc&&canon(s.loc)!==canon(r.def);
   return `<div class="pcard${s.val?' valid':''}" data-row="${r.row}" data-id="${esc(r.id||'')}" data-orig="${esc(tail)}" data-raw="${esc(s.loc)}">
     <div class="ph"><b>${esc(r.code)}</b><span class="muted">${esc(r.um)}</span>${s.val?'<span class="badge ok">✓ Validado</span>':'<span class="badge warn">Pendiente</span>'}${r.isNew?'<span class="badge bad">Serie agregada</span>':''}</div>
     <div class="pd">${esc(r.desc)}</div>
-    <div class="pi">Excel: por defecto <b>${esc(r.def||'—')}</b> · actual <b>${esc(r.G||'—')}</b> · conteo <b>${esc(r.F||'—')}</b></div>
+    <div class="pi">Actualización: <b>${esc(canon(locOf(r,s))||'—')}</b> · conteo <b>${esc(r.F||'—')}</b></div>
+    <div class="pi">Excel: por defecto ${esc(r.def||'—')} · actual ${esc(r.G||'—')}</div>
     ${moved?`<div class="pi"><span class="badge warn">Ahora en ${esc(canon(s.loc))}</span></div>`:''}
     <label>Cantidad</label><input class="q" type="number" inputmode="numeric" min="0" value="${esc(s.qty)}">
     <label>Ubicación (vacía = se queda la del Excel)</label><div class="locrow"><span class="pre">${esc(BASE)}-</span><input class="l" autocomplete="off" autocapitalize="characters" value="" placeholder="${esc(tail||'sin ubicación')}"></div>
@@ -698,10 +705,10 @@ function r2Render(){
   // grupos para elegir: pasillo (10-A02) -> letra (10-A02-N); no por ubicación exacta
   if(!r2Ready){
     r2Pas=new Map();r2Let=new Map();
-    allRows.concat(appendRows()).forEach(r=>{const s=stOf(r);const ps=new Set(),ls=new Set();
-      [canon(r.def),canon(s.loc)].forEach(x=>{const t=x?x.split('-'):[];if(t[0]!==BASE||!t[1])return;ps.add(t[1]);if(t[2])ls.add(t[1]+'|'+t[2])});
-      ps.forEach(p=>r2Pas.set(p,(r2Pas.get(p)||0)+1));
-      ls.forEach(k=>{const [p,l]=k.split('|');if(!r2Let.has(p))r2Let.set(p,new Map());const m=r2Let.get(p);m.set(l,(m.get(l)||0)+1)})});
+    allRows.concat(appendRows()).forEach(r=>{ // agrupa por la columna Actualización
+      const t=canon(locOf(r,stOf(r))).split('-');if(t[0]!==BASE||!t[1])return;
+      r2Pas.set(t[1],(r2Pas.get(t[1])||0)+1);
+      if(t[2]){if(!r2Let.has(t[1]))r2Let.set(t[1],new Map());const m=r2Let.get(t[1]);m.set(t[2],(m.get(t[2])||0)+1)}});
     r2Ready=true;
   }
   r2Chips();

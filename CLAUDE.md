@@ -29,6 +29,7 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 
 ## Ronda 2 (validación de datos de otra persona)
 - Se carga el Excel de otra persona; sus datos importados se pueden editar.
+- La ubicación que manda en Ronda 2/3 es la columna **Actualización** (H, valor cacheado `r.U`), vía `locOf()`; si se cambió la ubicación en la app, se usa la nueva. Filtrar, agrupar y ordenar usan solo eso (no E ni G por separado).
 - Filtros: por **grupo**, no por ubicación exacta: chips de pasillo (`10-A02`) → chips de letra de ese pasillo (`10-A02-N`, todos sus niveles/posiciones) (`r2Chips()`, `r2Pas`/`r2Let`); también texto (`A02,N`); código/descripción; Pendientes/Validados. Se quitó el `<select>` de ubicación exacta.
 - Cada tarjeta muestra los datos del Excel y permite editar Cantidad y Ubicación (ubicación vacía = se mantiene la del Excel; G vacía pasa a OK).
 - Incluye productos "agregados" (filas bajo la 2ª cabecera y los agregados en sesión).
@@ -50,7 +51,7 @@ Columnas: Item | Número de artículo | Descripción del artículo | Unidad de m
 
 ## Build web / PWA (carpeta de hosting)
 - `index.html`, `xlsx.full.min.js`, `jszip.min.js` (locales, sin CDN), `sw.js` (network-first), `manifest.webmanifest`, `icon-192.png`, `icon-512.png`; `window.__STANDALONE=true` registra el service worker.
-- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v6) para que los celulares tomen la versión nueva. El SW usa la caché si la red tarda >3 s.
+- **En cada release subir la versión de caché en `sw.js`** (`inventario-vN`, hoy v8) para que los celulares tomen la versión nueva. El SW usa la caché si la red tarda >3 s.
 
 ## Pruebas
 - Probar en Chrome real con Playwright (emulación táctil, viewport ~390×780) sirviendo la carpeta con `python3 -m http.server`.
